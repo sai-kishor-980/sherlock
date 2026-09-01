@@ -1,0 +1,72 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+backend/logs/*.log
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Pytest & test caches
+.pytest_cache/
+backend/.pytest_cache/
+
+# Evidence Uploads & Vault generated files
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/evidence_vault/temp/*
+!backend/evidence_vault/temp/.gitkeep
+backend/evidence_vault/encrypted/*
+!backend/evidence_vault/encrypted/.gitkeep
+backend/evidence_vault/test_case_*
+backend/evidence_vault/04977087-*
+
+# Rust / Tauri builds
+src-tauri/target/

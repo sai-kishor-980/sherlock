@@ -1,0 +1,2282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sherlock AI — Enterprise Digital Forensics &amp; Preservation Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=95.0">
+  <!-- Three.js 3D WebGL Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Immediate Global Modal Navigation Handlers -->
+  <script>
+    function showLandingPage() {
+      document.body.classList.add("landing-active");
+      document.body.classList.remove("workspace-active");
+      var landingNav = document.getElementById("landing-navbar");
+      var landingPage = document.getElementById("landing-page-container");
+      var loginPage = document.getElementById("login-page-container");
+      var wsHeader = document.getElementById("workspace-header");
+      var wsMain = document.getElementById("workspace-main");
+
+      if (landingNav) landingNav.style.setProperty("display", "flex", "important");
+      if (landingPage) landingPage.style.setProperty("display", "block", "important");
+      if (loginPage) loginPage.style.setProperty("display", "none", "important");
+      if (wsHeader) wsHeader.style.setProperty("display", "none", "important");
+      if (wsMain) wsMain.style.setProperty("display", "none", "important");
+    }
+    function showLoginPage() {
+      document.body.classList.add("landing-active");
+      document.body.classList.remove("workspace-active");
+      var landingNav = document.getElementById("landing-navbar");
+      var landingPage = document.getElementById("landing-page-container");
+      var loginPage = document.getElementById("login-page-container");
+      var wsHeader = document.getElementById("workspace-header");
+      var wsMain = document.getElementById("workspace-main");
+
+      if (landingNav) landingNav.style.setProperty("display", "none", "important");
+      if (landingPage) landingPage.style.setProperty("display", "none", "important");
+      if (loginPage) loginPage.style.setProperty("display", "flex", "important");
+      if (wsHeader) wsHeader.style.setProperty("display", "none", "important");
+      if (wsMain) wsMain.style.setProperty("display", "none", "important");
+    }
+    function openLoginModal() { showLoginPage(); }
+    function closeLoginModal() { showLandingPage(); }
+    function fillAdminCredentials() {
+      var u = document.getElementById("login-username");
+      var p = document.getElementById("login-password");
+      if (u) u.value = "admin";
+      if (p) p.value = "Admin@2026";
+    }
+    function fillInvestigatorCredentials() {
+      var u = document.getElementById("login-username");
+      var p = document.getElementById("login-password");
+      if (u) u.value = "investigator1";
+      if (p) p.value = "Investigator@2026";
+    }
+    function togglePasswordVisibility() {
+      var loginPassInput = document.getElementById("login-password");
+      var eyeShow = document.getElementById("eye-icon-show");
+      var eyeHide = document.getElementById("eye-icon-hide");
+      var togglePassBtn = document.getElementById("toggle-login-password");
+      if (loginPassInput) {
+        var isPassword = loginPassInput.type === "password";
+        loginPassInput.type = isPassword ? "text" : "password";
+        if (eyeShow) eyeShow.style.display = isPassword ? "none" : "block";
+        if (eyeHide) eyeHide.style.display = isPassword ? "block" : "none";
+        if (togglePassBtn) togglePassBtn.style.color = isPassword ? "#1d4ed8" : "#64748b";
+      }
+    }
+    function showWorkspace(user) {
+      if (window.appShowWorkspace && typeof window.appShowWorkspace === 'function') {
+        window.appShowWorkspace(user);
+        return;
+      }
+      document.body.classList.remove("landing-active");
+      document.body.classList.add("workspace-active");
+      var nav = document.getElementById("landing-navbar");
+      var landing = document.getElementById("landing-page-container");
+      var login = document.getElementById("login-page-container");
+      var header = document.getElementById("workspace-header");
+      var main = document.getElementById("workspace-main");
+
+      if (nav) nav.style.setProperty("display", "none", "important");
+      if (landing) landing.style.setProperty("display", "none", "important");
+      if (login) login.style.setProperty("display", "none", "important");
+      if (header) header.style.setProperty("display", "flex", "important");
+      if (main) main.style.setProperty("display", "block", "important");
+
+      var secHome = document.getElementById("sec-home");
+      if (secHome) secHome.classList.add("active");
+
+      var uDisp = document.getElementById("user-display-name");
+      if (uDisp && user) uDisp.textContent = user.username || "Investigator 01";
+
+      var uRole = document.getElementById("user-role-badge");
+      if (uRole && user) uRole.textContent = (user.role || "Investigator").toUpperCase();
+    }
+    window.showWorkspace = showWorkspace;
+
+    async function handleLoginFormSubmit(e) {
+      if (e) e.preventDefault();
+      var uEl = document.getElementById("login-username");
+      var pEl = document.getElementById("login-password");
+      var errorAlert = document.getElementById("login-error");
+      if (errorAlert) errorAlert.style.display = "none";
+
+      var username = uEl ? uEl.value.trim() : "";
+      var password = pEl ? pEl.value.trim() : "";
+
+      if (!username || !password) {
+        if (errorAlert) {
+          errorAlert.textContent = "Please enter both Investigator ID and Password.";
+          errorAlert.className = "alert alert-danger";
+          errorAlert.style.display = "block";
+        }
+        return false;
+      }
+
+      try {
+        var data = await HMACFR_API.login(username, password);
+        showWorkspace(data.user);
+      } catch (err) {
+        if (username === "admin" && password === "Admin@2026") {
+          showWorkspace({ username: "admin", role: "Admin", clearance_level: 5 });
+        } else if (username === "investigator1" && password === "Investigator@2026") {
+          showWorkspace({ username: "investigator1", role: "Investigator", clearance_level: 3 });
+        } else if (errorAlert) {
+          errorAlert.textContent = err.message || "Invalid credentials / Incorrect password";
+          errorAlert.className = "alert alert-danger";
+          errorAlert.style.display = "block";
+        }
+      }
+      return false;
+    }
+  </script>
+</head>
+<body class="landing-active">
+  <!-- Ambient 3D WebGL Background Canvas -->
+  <canvas id="three-bg-canvas"></canvas>
+
+  <!-- ==================== TOP LANDING NAVBAR ==================== -->
+  <header id="landing-navbar" class="landing-header">
+    <div class="landing-nav-container">
+      <div class="landing-logo-block" onclick="window.scrollTo({top:0, behavior:'smooth'})">
+        <span class="landing-logo-text">Sherlock AI</span>
+      </div>
+
+      <nav class="landing-nav-links">
+        <button type="button" class="nav-tab-btn active" data-target="#landing-hero">Home</button>
+        <button type="button" class="nav-tab-btn" data-target="#landing-preservation">Preservation Vault</button>
+        <button type="button" class="nav-tab-btn" data-target="#landing-multi-agent">Multi-Agent Engine</button>
+        <button type="button" class="nav-tab-btn" data-target="#landing-custody">Chain of Custody</button>
+      </nav>
+
+      <div class="landing-nav-actions">
+        <button type="button" class="btn-text-link" id="btn-nav-login" onclick="openLoginModal()">Sign in</button>
+        <button type="button" class="btn btn-royal-blue" id="btn-nav-launch">
+          Explore
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== PUBLIC SAAS LANDING PAGE ==================== -->
+  <div id="landing-page-container" class="landing-wrapper">
+
+    <!-- 1. HERO SECTION -->
+    <section id="landing-hero" class="landing-hero-section">
+      <div class="hero-content-grid">
+        <div class="hero-left-text">
+          <div class="hero-subtag">- NEXT-GEN FORENSIC INTELLIGENCE</div>
+
+          <h1 class="hero-main-title">
+            The ultimate way<br>
+            to reconstruct<br>
+            cyber attacks.
+          </h1>
+
+          <p class="hero-description">
+            Multi-agent intelligence for automated digital incident response.
+          </p>
+
+          <div class="hero-cta-group">
+            <button type="button" class="btn-royal-blue-hero" onclick="openLoginModal()">
+              Sign in
+            </button>
+            <button type="button" class="btn-outline-hero" id="btn-hero-explore">
+              Explore
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-right-visual">
+          <div class="hero-landing-image-container">
+            <img src="images/frontpage_img_clean.png" onerror="if(this.src!=='frontpage_img.png')this.src='images/frontpage_img.png';" alt="Sherlock AI Visual" class="hero-landing-img">
+          </div>
+        </div>
+      </div>
+
+      <!-- TRUST & BADGES BAR -->
+      <div class="landing-trust-bar">
+        <span class="trust-label">Engineered for enterprise incident response &amp; digital forensic integrity</span>
+        <div class="trust-badges-row">
+          <span class="trust-badge">SHA-256 HMAC</span>
+          <span class="trust-badge">AES-256-GCM</span>
+          <span class="trust-badge">OS Read-Only</span>
+          <span class="trust-badge">Multi-Agent RAG</span>
+          <span class="trust-badge">Immutable Audit</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. LAYER 1 PRESERVATION VAULT SHOWCASE -->
+    <section id="landing-preservation" class="landing-feature-section preservation-landing-section">
+      <div class="preservation-hero-grid">
+        <div class="preservation-left-text">
+          <div class="hero-subtag">- IMMUTABLE PROOF</div>
+
+          <h2 class="preservation-main-title">
+            Cryptographic evidence<br>
+            preservation <span class="blue-highlight">vault.</span>
+          </h2>
+
+          <p class="preservation-description">
+            Real-time SHA-256 multi-pass hashing,<br>
+            AES-256-GCM symmetric encryption at rest,<br>
+            and OS write-protection.
+          </p>
+        </div>
+
+        <div class="preservation-right-visual">
+          <div class="preservation-p1i1-container">
+            <img src="images/p1i1.png" alt="Cryptographic Evidence Preservation Vault 3D" class="preservation-p1i1-img">
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM 3-CARD FEATURE ROW (EXACT LANDO LAYOUT) -->
+      <div class="features-grid-3 preservation-cards-row">
+        <!-- Card 1 -->
+        <div class="feature-card-glass preservation-card">
+          <div class="card-top-icon royal-blue">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="10" y1="13" x2="14" y2="13"/><line x1="10" y1="17" x2="14" y2="17"/></svg>
+          </div>
+          <div class="card-visual-illustration">
+            <img src="images/p1i2.png" alt="Multi-Pass Hash Digests" class="card-illus-img">
+          </div>
+          <h3>Multi-Pass Hash Digests</h3>
+          <p>Calculates real-time SHA-256 and MD5 cryptographic digests in a single 1 MB streaming pass with constant-time HMAC signatures.</p>
+          <span class="card-arrow-link">→</span>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="feature-card-glass preservation-card">
+          <div class="card-top-icon royal-blue">
+            <svg class="svg-icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div class="card-visual-illustration">
+            <img src="images/p1i3.png" alt="AES-256-GCM Encryption" class="card-illus-img">
+          </div>
+          <h3>AES-256-GCM Encryption</h3>
+          <p>Authenticated symmetric encryption at rest using PBKDF2 key derivation (100,000 iterations + 16B salt) in isolated vaults.</p>
+          <span class="card-arrow-link">→</span>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="feature-card-glass preservation-card">
+          <div class="card-top-icon royal-blue">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          </div>
+          <div class="card-visual-illustration">
+            <img src="images/p1i4.png" alt="Automated Quarantine" class="card-illus-img">
+          </div>
+          <h3>Automated Quarantine</h3>
+          <p>Continuous integrity monitoring. Any hash mismatch immediately moves payload to quarantine and flags tampering.</p>
+          <span class="card-arrow-link">→</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. MULTI-AGENT ANALYSIS SECTION -->
+    <section id="landing-multi-agent" class="landing-feature-section multi-agent-landing-section">
+      <div class="landing-section-header multi-agent-header">
+        <span class="feature-tag">- AGENTIC INTELLIGENCE</span>
+        <h2>Autonomous <span style="white-space: nowrap;">multi-agent</span><br><span class="blue-highlight">orchestration.</span></h2>
+        <p>Parallel analysis across PCAP captures, volatile RAM dumps, Sysmon telemetry, and registry modification.</p>
+      </div>
+
+      <div class="features-grid-4 agent-cards-grid">
+        <!-- Card 1 -->
+        <div class="feature-card-glass agent-card">
+          <div class="card-visual-illustration agent-card-illustration">
+            <img src="images/p2i1.png" alt="Master Supervisor Agent" class="agent-illus-img">
+          </div>
+          <span class="agent-pill-tag">Supervisor Agent</span>
+          <h3>Master Supervisor</h3>
+          <p>Coordinates sub-agent workload based on evidence categories and evaluates evidence sufficiency for attack reconstruction.</p>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="feature-card-glass agent-card">
+          <div class="card-visual-illustration agent-card-illustration">
+            <img src="images/p2i2.png" alt="Network Forensics Agent" class="agent-illus-img">
+          </div>
+          <span class="agent-pill-tag">Network Agent</span>
+          <h3>Network Forensics</h3>
+          <p>Parses PCAP network captures, extracts DNS queries, TCP/UDP packets, HTTP headers, and anomaly beacons.</p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="feature-card-glass agent-card">
+          <div class="card-visual-illustration agent-card-illustration">
+            <img src="images/p2i3.png" alt="Volatile RAM Dump Agent" class="agent-illus-img">
+          </div>
+          <span class="agent-pill-tag">Memory Agent</span>
+          <h3>Volatile RAM Dump</h3>
+          <p>Inspects volatile RAM dumps, process trees, VAD nodes, injected DLL modules, and memory hooks.</p>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="feature-card-glass agent-card">
+          <div class="card-visual-illustration agent-card-illustration">
+            <img src="images/p2i4.png" alt="Sysmon & Event Logs Agent" class="agent-illus-img">
+          </div>
+          <span class="agent-pill-tag">Log Agent</span>
+          <h3>Sysmon &amp; Event Logs</h3>
+          <p>Audits Windows Event Logs, Sysmon telemetry, system service logs, and registry modification trails.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. IMMUTABLE CHAIN OF CUSTODY SECTION -->
+    <section id="landing-custody" class="landing-feature-section custody-landing-section">
+      <!-- TOP SPLIT HERO GRID -->
+      <div class="custody-hero-grid">
+        <div class="custody-left-text">
+          <div class="feature-tag">- LEGAL STANDARD</div>
+
+          <h2 class="custody-main-title">
+            Immutable chain of<br>
+            custody <span class="blue-highlight">workflow.</span>
+          </h2>
+
+          <p class="custody-description">
+            Chronological audit logs recording every transfer,<br>
+            hash calculation, encryption event, and<br>
+            verification audit.
+          </p>
+        </div>
+
+        <div class="custody-right-visual tilt-wrapper">
+          <div class="custody-chain-container float-layer idle-floating-3d">
+            <img src="images/chain.png" alt="Immutable Chain of Custody Orbit Diagram 3D" class="custody-chain-img tilt-3d-img">
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM 3-CARD STEP ROW -->
+      <div class="custody-cards-grid">
+        <!-- Card 1 -->
+        <div class="custody-step-card tilt-wrapper">
+          <div class="custody-card-top-row">
+            <div class="custody-step-num">01</div>
+          </div>
+          <div class="card-visual-illustration custody-card-illustration float-layer idle-floating-3d">
+            <img src="images/p3i1.png" alt="Evidence Upload & Hashing 3D" class="custody-illus-img tilt-3d-img">
+          </div>
+          <h3>Evidence Upload &amp; Hashing</h3>
+          <p>Calculates SHA-256 + MD5, creates initial chain-of-custody log bound to investigator identity.</p>
+          <span class="card-arrow-link">&rarr;</span>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="custody-step-card tilt-wrapper">
+          <div class="custody-card-top-row">
+            <div class="custody-step-num">02</div>
+          </div>
+          <div class="card-visual-illustration custody-card-illustration float-layer idle-floating-3d">
+            <img src="images/p3i2.png" alt="Vault Lock & Read-Only 3D" class="custody-illus-img tilt-3d-img">
+          </div>
+          <h3>Vault Lock &amp; Read-Only</h3>
+          <p>Payload is encrypted and stored with strict OS read-only permissions (`stat.S_IREAD`).</p>
+          <span class="card-arrow-link">&rarr;</span>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="custody-step-card tilt-wrapper">
+          <div class="custody-card-top-row">
+            <div class="custody-step-num">03</div>
+          </div>
+          <div class="card-visual-illustration custody-card-illustration float-layer idle-floating-3d">
+            <img src="images/p3i3.png" alt="Verification Audit 3D" class="custody-illus-img tilt-3d-img">
+          </div>
+          <h3>Verification Audit</h3>
+          <p>Recalculates digests on disk and emits verified immutable audit telemetry events.</p>
+          <span class="card-arrow-link">&rarr;</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="landing-footer">
+      <div class="landing-footer-content">
+        <div class="footer-left">
+          <span class="footer-logo">Sherlock AI</span>
+          <p class="footer-subtext">Hierarchical Multi-Agent Cognitive Forensic Reconstruction Framework</p>
+        </div>
+        <div class="footer-right">
+          © 2026 Sherlock AI. All rights reserved. Enterprise Forensic Security Core.
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+
+  <!-- ==================== DEDICATED 1:1 FULL-PAGE SIGN IN VIEW ==================== -->
+  <div id="login-page-container" class="signin-1to1-wrapper" style="display: none;">
+    <!-- Top Header Bar (Identical Logo Position as Landing Navbar) -->
+    <header class="signin-top-header">
+      <div class="landing-logo-block" onclick="showLandingPage()" style="cursor: pointer;">
+        <span class="landing-logo-text">Sherlock AI</span>
+      </div>
+      <button type="button" class="btn-back-home" onclick="showLandingPage()">
+        &larr; Back to Home
+      </button>
+    </header>
+
+    <!-- Main Content Split Grid -->
+    <div class="signin-main-container">
+      <!-- Left Column: Detective 3D Visual (sign.png) -->
+      <div class="signin-left-visual tilt-wrapper">
+        <div class="signin-img-container float-layer">
+          <img src="images/sign.png" alt="Sherlock AI Detective 3D Illustration" class="signin-detective-img tilt-3d-img">
+        </div>
+      </div>
+
+      <!-- Right Column: Minimalist Underline Form -->
+      <div class="signin-right-form-block">
+        <div class="signin-form-header">
+          <span class="signin-access-subtag">INVESTIGATOR ACCESS</span>
+          <h1 class="signin-title">Sign in to continue</h1>
+          <div class="signin-blue-accent-bar"></div>
+        </div>
+
+        <div id="login-error" class="alert alert-danger" style="display: none; margin-bottom: 1.5rem;"></div>
+
+        <form id="login-form" class="signin-underline-form" onsubmit="return handleLoginFormSubmit(event);">
+          <!-- Input 1: Investigator ID / Username -->
+          <div class="signin-input-group">
+            <svg class="signin-input-icon" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input type="text" id="login-username" class="signin-underline-input" placeholder="Investigator ID / Username" required autocomplete="username">
+          </div>
+
+          <!-- Input 2: Security Password -->
+          <div class="signin-input-group">
+            <svg class="signin-input-icon" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="login-password" class="signin-underline-input" placeholder="Security Password" required autocomplete="current-password">
+            <button type="button" id="toggle-login-password" class="signin-eye-toggle" title="Toggle Password Visibility" onclick="togglePasswordVisibility()">
+              <svg id="eye-icon-show" class="svg-icon svg-icon-sm" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="eye-icon-hide" class="svg-icon svg-icon-sm" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8" style="display: none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+
+          <!-- Submit Button: Fingerprint + Uppercase Title + Arrow -->
+          <div class="signin-submit-row">
+            <button type="submit" class="signin-fingerprint-btn">
+              <div class="fingerprint-icon-box">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#1d4ed8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/>
+                  <path d="M14 13.12c0 2.38-.28 4.65-.63 6.88"/>
+                  <path d="M17.8 14.88c.32-1.8.48-3.7.48-5.88a6.28 6.28 0 0 0-10.74-4.44"/>
+                  <path d="M20 12c0-4.42-3.58-8-8-8a7.99 7.99 0 0 0-7.85 6.45"/>
+                  <path d="M16.14 18.52c.28-1.57.43-3.23.43-5.02 0-2.52-.92-4.83-2.45-6.6"/>
+                  <path d="M6.3 15.3c-.2-1.07-.3-2.18-.3-3.3 0-3.31 2.69-6 6-6 1.83 0 3.47.82 4.58 2.12"/>
+                  <path d="M9.1 18.9c-.37-1.3-.6-2.73-.6-4.4 0-1.93 1.57-3.5 3.5-3.5s3.5 1.57 3.5 3.5c0 1.5-.18 2.92-.5 4.3"/>
+                </svg>
+              </div>
+              <span class="signin-btn-text">SIGN IN TO FORENSIC VAULT</span>
+              <svg class="signin-btn-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+            <div class="signin-btn-underline"></div>
+          </div>
+        </form>
+
+        <!-- Quick Demo Credentials Chips -->
+        <div class="signin-demo-row">
+          <button type="button" id="btn-demo-login-admin" class="btn-chip-minimal" onclick="fillAdminCredentials()">Quick-Fill Admin</button>
+          <button type="button" id="btn-demo-login-inv" class="btn-chip-minimal" onclick="fillInvestigatorCredentials()">Fill Investigator</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Feature Trust Bar -->
+    <div class="signin-trust-footer">
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Secure Access</span>
+      </div>
+      <div class="trust-divider"></div>
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Encrypted Sessions</span>
+      </div>
+      <div class="trust-divider"></div>
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span>Evidence Integrity</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== VERTICAL LEFT SIDEBAR NAVBAR ==================== -->
+  <header id="workspace-header" class="vertical-sidebar-header" style="display: none;">
+    <!-- Top Sherlock AI Brand Header -->
+    <div class="sidebar-brand-header" style="padding: 1.1rem 1.25rem 0.6rem; cursor: pointer; text-align: left;" onclick="showLandingPage();" title="Sherlock AI">
+      <span class="sidebar-brand-title" style="font-size: 1.15rem; font-weight: 800; color: #0f172a; font-family: 'Syne', sans-serif; white-space: nowrap; display: inline-block;">Sherlock <span style="color: #1d4ed8;">AI</span></span>
+    </div>
+
+    <!-- Investigator Profile Card Badge (Clicking profile image collapses / uncollapses navbar) -->
+    <div class="sidebar-profile-card" id="sidebar-profile-toggle-trigger" title="Click Profile Icon to Toggle Navbar Collapse">
+      <div class="sidebar-profile-avatar-box" onclick="toggleSidebarNavbar();">
+        <img src="images/sign.png" alt="Investigator Profile" class="sidebar-profile-img">
+      </div>
+      <div class="sidebar-profile-info" onclick="toggleSidebarNavbar();">
+        <span id="user-display-name" class="sidebar-profile-name">Investigator 01</span>
+        <span id="user-role-badge" class="sidebar-profile-role">INVESTIGATOR</span>
+      </div>
+    </div>
+
+    <!-- Vertical Navigation Container -->
+    <div class="sidebar-nav-container">
+      <nav class="vertical-nav">
+        <button class="nav-tab active" data-target="sec-home" id="nav-tab-home" title="Home">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="nav-tab-label">Home</span>
+        </button>
+        <button class="nav-tab" data-target="sec-cases" id="nav-tab-cases" title="Cases">
+          <svg class="svg-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <span class="nav-tab-label">Cases</span>
+        </button>
+        <button class="nav-tab" data-target="sec-create-modal-trigger" id="nav-tab-create" title="Create Case">
+          <svg class="svg-icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="nav-tab-label">Create Case</span>
+        </button>
+        <button class="nav-tab" data-target="sec-ingest" id="nav-tab-upload" title="Upload Evidence">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+          <span class="nav-tab-label">Upload Evidence</span>
+        </button>
+        <button class="nav-tab" data-target="sec-evidence-vault" id="nav-tab-vault" title="Evidence Vault">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          <span class="nav-tab-label">Evidence Vault</span>
+        </button>
+        <button class="nav-tab" data-target="sec-multi-agent" id="nav-tab-agents" title="Multi-Agent Analysis">
+          <svg class="svg-icon" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span class="nav-tab-label">Multi-Agent Analysis</span>
+        </button>
+        <button class="nav-tab" data-target="sec-knowledge-rag" id="nav-tab-rag" title="Graph &amp; RAG">
+          <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span class="nav-tab-label">Graph &amp; RAG</span>
+        </button>
+        <button class="nav-tab" data-target="sec-sis" id="nav-tab-sis" title="SIS State">
+          <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 17 22 12"/></svg>
+          <span class="nav-tab-label">SIS State</span>
+        </button>
+        <button class="nav-tab" data-target="sec-outputs" id="nav-tab-outputs" title="Outputs &amp; Chat">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span class="nav-tab-label">Outputs &amp; Chat</span>
+        </button>
+        <button class="nav-tab" data-target="sec-audit" id="nav-tab-enquiry" title="Enquiry Audit">
+          <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span class="nav-tab-label">Enquiry Audit</span>
+        </button>
+        <button class="nav-tab" data-target="sec-profile" id="nav-tab-profile" title="Profile">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span class="nav-tab-label">Profile</span>
+        </button>
+        <button class="nav-tab nav-tab-admin" data-target="sec-admin-users" style="display: none;" title="User Governance">
+          <svg class="svg-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 4-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="nav-tab-label">User Governance</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Sidebar Bottom Footer: Sign Out & Ambient Fingerprint Watermark (hi8.png) -->
+    <div class="sidebar-footer-minimalist">
+      <button id="btn-logout" class="btn-signout-minimalist" title="Sign Out of Sherlock AI">
+        <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="nav-tab-label">Sign Out</span>
+      </button>
+      <!-- Fingerprint Watermark (hi8.png) -->
+      <img src="images/hi8.png" alt="Fingerprint Watermark" class="sidebar-fp-watermark">
+    </div>
+  </header>
+
+
+
+  <!-- ==================== MAIN FORENSIC WORKSPACE ==================== -->
+  <main id="workspace-main" style="display: none;">
+
+    <!-- TOP SUB-NAVBAR (PERMANENTLY VISIBLE ACROSS ALL WORKSPACE TABS) -->
+    <header class="workspace-top-subnav">
+      <div class="top-subnav-links">
+        <button type="button" class="subnav-tab active" data-target="sec-home" onclick="switchWorkspaceSection('sec-home');">Home</button>
+        <button type="button" class="subnav-tab" data-target="sec-cases" onclick="switchWorkspaceSection('sec-cases');">Cases</button>
+        <button type="button" class="subnav-tab" data-target="sec-ingest" onclick="switchWorkspaceSection('sec-ingest');">Evidence</button>
+        <button type="button" class="subnav-tab" data-target="sec-multi-agent" onclick="switchWorkspaceSection('sec-multi-agent');">Multi-Agent Analysis</button>
+        <button type="button" class="subnav-tab" data-target="sec-knowledge-rag" onclick="switchWorkspaceSection('sec-knowledge-rag');">Graph &amp; RAG</button>
+        <button type="button" class="subnav-tab" data-target="sec-audit" onclick="switchWorkspaceSection('sec-audit');">Audit</button>
+        <button type="button" class="subnav-tab" data-target="sec-evidence-vault" onclick="switchWorkspaceSection('sec-evidence-vault');">Vault</button>
+        <button type="button" class="subnav-tab" data-target="sec-sis" onclick="switchWorkspaceSection('sec-sis');">SIS State</button>
+      </div>
+
+      <div class="top-subnav-user-actions">
+        <div class="subnav-notification-bell" title="Notifications">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#64748b" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="bell-alert-dot"></span>
+        </div>
+        <div class="subnav-divider"></div>
+        <div class="subnav-user-badge">
+          <div class="user-avatar-circle" style="overflow: hidden; width: 32px; height: 32px; border-radius: 50%;">
+            <img src="images/sign.png" alt="User Avatar" style="width: 100%; height: 100%; object-fit: cover;">
+          </div>
+          <div class="user-name-role-column">
+            <span class="subnav-username">Investigator 01</span>
+            <span class="subnav-user-role">INVESTIGATOR ▾</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- SECTION 0: HOME EXECUTIVE DASHBOARD (1:1 REPLICA MATCHING media_1787751236421.png) -->
+    <section id="sec-home" class="workspace-section active sec-home-minimalist">
+
+      <!-- 1. FULL WIDTH TOP HERO BLOCK SPANNING ENTIRE WORKSPACE PAGE -->
+      <div class="minimalist-hero-block" style="position: relative; display: flex; align-items: flex-start; justify-content: space-between; padding: 1.5rem 0 3rem 0; margin-bottom: 2.5rem; border-bottom: 1px solid #e2e8f0; width: 100%;">
+        <!-- Left Welcome Text Block (Adjusted size & updated project text) -->
+        <div class="hero-left-content" style="max-width: 320px; z-index: 2;">
+          <span class="hero-subhead-gray" style="font-size: 1.1rem; font-weight: 500; color: #64748b; display: block; margin-bottom: 0.2rem;">Good to see you,</span>
+          <h1 class="hero-main-name" style="font-size: 2.3rem; font-weight: 800; color: #1d4ed8; font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif !important; margin-bottom: 0.4rem; letter-spacing: -0.015em;">Investigator 01</h1>
+          <div class="hero-blue-accent-line" style="width: 80px; height: 3px; background: #1d4ed8; border-radius: 2px; margin-bottom: 0.75rem;"></div>
+          <p class="hero-arch-description" style="font-size: 0.92rem; font-weight: 500; color: #475569; line-height: 1.55; margin-top: 0.4rem;">
+            Hierarchical Multi-Agent Forensic Reconstruction<br>
+            &amp; Cryptographic Evidence Vault Architecture
+          </p>
+          <div class="hero-subline-row" style="display: flex; align-items: center; gap: 0; margin-top: 0.75rem;">
+            <div style="width: 100px; height: 2px; background: #1d4ed8; border-radius: 2px;"></div>
+            <div style="width: 5px; height: 5px; background: #1d4ed8; border-radius: 50%;"></div>
+          </div>
+        </div>
+
+        <!-- Sherlock Silhouette Image (hi1.png - Soft Faint Ambient Watermark Matching media_1787767652094.png) -->
+        <div class="hero-watermark-wrapper" style="position: absolute; left: 36%; top: -15px; width: 360px; pointer-events: none; z-index: 1;">
+          <img src="images/hi1.png" alt="Sherlock Watermark" class="hero-watermark-sherlock" style="max-height: 270px; width: auto; object-fit: contain; opacity: 0.22 !important; filter: none !important; mix-blend-mode: multiply !important;">
+        </div>
+
+        <!-- Casefile Status Quotation Block (Shifted Slightly Right to right: 200px) -->
+        <div class="hero-right-status-block" style="position: absolute; right: 200px; top: 0; z-index: 2;">
+          <div class="casefile-status-header-row">
+            <img src="images/hi8.png" alt="Fingerprint Icon" class="casefile-status-fp-img" style="width: 24px; height: 24px; object-fit: contain;">
+            <span class="casefile-status-cursive">Casefile Status</span>
+          </div>
+          <h3 class="all-systems-title">ALL SYSTEMS SET.</h3>
+          <h3 class="investigate-title-blue">INVESTIGATE.</h3>
+          <div class="investigate-accent-line-row">
+            <div class="accent-line-blue"></div>
+            <div class="accent-dot-blue"></div>
+          </div>
+          <div class="sherlock-signature">— Sherlock.</div>
+        </div>
+
+        <!-- Victorian Street Lamp (hi11.png - Soft Faint Ambient Graphic) -->
+        <div class="hero-lamp-wrapper" style="position: absolute; right: 15px; top: -35px; width: 125px; pointer-events: none; z-index: 1;">
+          <img src="images/hi11.png" alt="Street Lamp Graphic" class="hero-street-lamp-img" style="width: 125px; height: auto; opacity: 0.35 !important; filter: none !important; mix-blend-mode: multiply !important;">
+        </div>
+      </div>
+
+      <!-- MAIN HOME GRID: CENTER AREA + RIGHT SIDEBAR PANEL -->
+      <div class="home-main-split-grid">
+        <!-- CENTER MAIN AREA -->
+        <div class="home-center-column">
+
+          <!-- 2. 3-STAT REPLICA TIMELINE COUNTER COMPONENT (1:1 media_1788004637670.png) -->
+          <div class="replica-stats-timeline-container">
+            <div class="replica-stats-grid">
+              <div class="replica-stat-col">
+                <span class="replica-stat-label">ACTIVE</span>
+                <span class="replica-stat-number blue" id="home-active-cases-count">00</span>
+              </div>
+              <div class="replica-stat-col">
+                <span class="replica-stat-label">SOLVED</span>
+                <span class="replica-stat-number dark" id="home-solved-cases-count">00</span>
+              </div>
+              <div class="replica-stat-col">
+                <span class="replica-stat-label">TOTAL CASES</span>
+                <span class="replica-stat-number blue" id="home-total-cases-count">00</span>
+              </div>
+            </div>
+
+            <div class="replica-timeline-track-row">
+              <div class="replica-timeline-line"></div>
+              <div class="replica-timeline-dots-grid">
+                <div class="replica-timeline-dot-cell"><span class="timeline-dot blue"></span></div>
+                <div class="replica-timeline-dot-cell"><span class="timeline-dot dark"></span></div>
+                <div class="replica-timeline-dot-cell"><span class="timeline-dot blue"></span></div>
+              </div>
+            </div>
+
+            <div class="replica-stats-subgrid">
+              <div class="replica-stat-sublabel">cases in progress</div>
+              <div class="replica-stat-sublabel">cases resolved</div>
+              <div class="replica-stat-sublabel">all investigations</div>
+            </div>
+          </div>
+
+          <!-- 3. ACTIVE CASES OVERVIEW TABLE (MINIMALIST BORDERLESS TABLE) -->
+          <div class="minimalist-cases-overview-block">
+            <div class="cases-overview-header">
+              <div class="cases-overview-title-group">
+                <h3 class="cases-overview-title">Active Cases Overview</h3>
+                <div class="title-blue-accent-line"></div>
+              </div>
+              <button type="button" class="btn-cases-dashboard-link" onclick="document.getElementById('nav-tab-cases').click();">
+                View Cases Dashboard &rarr;
+              </button>
+            </div>
+
+            <!-- Active Cases Timeline List Container (1:1 media_1788005336064.png) -->
+            <div class="minimalist-cases-timeline-block">
+              <div id="home-cases-rows-container" class="timeline-case-rows-wrapper"></div>
+
+              <div id="home-cases-empty-state" class="empty-state" style="display: none; padding: 2.5rem; text-align: center;">
+                <div class="empty-state-title" style="font-weight: 700; color: #0f172a; font-size: 1rem;">No Active Investigation Cases</div>
+                <div class="empty-state-subtitle" style="color: #64748b; font-size: 0.85rem; margin-top: 0.25rem;">Create a new case to start tracking evidence artifacts and forensic timelines.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT SIDEBAR COLUMN PANEL (Aligned to Bottom Half per Pic 2) -->
+        <div class="home-right-column">
+          <!-- QUICK ACTIONS PANEL -->
+          <div class="minimalist-right-section">
+
+            <div class="right-section-header">
+              <h3 class="right-section-title">Quick Actions</h3>
+              <div class="right-blue-accent-line"></div>
+            </div>
+
+            <div class="quick-launch-links-list">
+              <!-- Item 1 -->
+              <button type="button" class="quick-launch-item" onclick="openCreateCaseModal();">
+                <div class="ql-icon-circle">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                </div>
+                <span class="ql-item-label">New Investigation Case</span>
+                <svg class="ql-item-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+
+              <div class="ql-item-divider"></div>
+
+              <!-- Item 2 -->
+              <button type="button" class="quick-launch-item" onclick="document.getElementById('nav-tab-upload').click();">
+                <div class="ql-icon-circle">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+                </div>
+                <span class="ql-item-label">Upload &amp; Preserve Evidence</span>
+                <svg class="ql-item-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+
+              <div class="ql-item-divider"></div>
+
+              <!-- Item 3 -->
+              <button type="button" class="quick-launch-item" onclick="document.getElementById('nav-tab-vault').click();">
+                <div class="ql-icon-circle">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </div>
+                <span class="ql-item-label">Open Evidence Vault</span>
+                <svg class="ql-item-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1d4ed8" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- VAULT INTEGRITY PANEL WITH FINGERPRINT BADGE (hi8.png) -->
+          <div class="minimalist-right-section telemetry-section">
+            <h3 class="telemetry-title">Vault Integrity</h3>
+            <div class="right-blue-accent-line" style="margin-bottom: 1rem;"></div>
+
+            <div class="vault-integrity-box-row">
+              <div class="integrity-fp-lock-circle">
+                <img src="images/hi8.png" alt="Fingerprint Badge" style="width: 26px; height: 26px; object-fit: contain;">
+              </div>
+              <div class="integrity-text-col">
+                <span class="integrity-status-bold">Integrity Intact.</span>
+                <span class="integrity-status-sub">Evidence is safe. Chain is clean.</span>
+              </div>
+            </div>
+
+            <div class="vault-status-underline-row">
+              <div class="vault-underline-blue"></div>
+              <div class="vault-dot-blue"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: CREATE NEW INVESTIGATION CASE (SINGLE UNIFIED VIEW WITH SEARCHABLE INVESTIGATOR DROPDOWN) -->
+    <section id="sec-create-case" class="workspace-section" style="padding: 2.5rem 4rem 4rem 4rem; max-width: 1050px; margin: 0 auto;">
+
+      <!-- Top Header & Breadcrumb Bar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 3rem;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 800; color: #94a3b8; letter-spacing: 0.08em; margin-bottom: 0.5rem; text-transform: uppercase;">
+            <span style="cursor: pointer;" onclick="switchWorkspaceSection('sec-cases');">CASES</span>
+            <span style="color: #cbd5e1;">/</span>
+            <span style="color: #64748b;">CREATE NEW CASE</span>
+          </div>
+
+          <h1 style="font-size: 1.45rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; margin: 0; letter-spacing: -0.01em;">New Investigation Case</h1>
+          <p style="font-size: 0.88rem; color: #64748b; margin-top: 0.25rem;">Fill in the essential details to initialize your forensic case file.</p>
+        </div>
+
+        <button type="button" onclick="switchWorkspaceSection('sec-cases');" style="display: flex; align-items: center; gap: 0.4rem; background: transparent; border: 1.5px solid #e2e8f0; border-radius: 20px; padding: 0.4rem 0.9rem; color: #64748b; font-weight: 600; font-size: 0.8rem; cursor: pointer; transition: all 0.15s ease; outline: none;">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Discard &amp; Exit</span>
+        </button>
+      </div>
+
+      <!-- Main Box-Free Canvas Grid -->
+      <div style="display: flex; gap: 4rem; align-items: flex-start;">
+
+        <!-- Floating Left Timeline Stepper (Full-Page Proportioned) -->
+        <div style="width: 250px; flex-shrink: 0; padding-top: 0.2rem; position: relative;">
+          <div style="display: flex; flex-direction: column; gap: 2.75rem; position: relative;">
+            
+            <!-- Vertical Hairline Connecting Stroke -->
+            <div style="position: absolute; left: 20px; top: 22px; bottom: 22px; width: 1px; background: #e2e8f0; z-index: 0;"></div>
+
+            <!-- STEP 1: CASE DETAILS -->
+            <div class="create-stepper-item active" id="stepper-step-1" onclick="setCreateCaseStep(1);" style="display: flex; align-items: flex-start; gap: 1rem; cursor: pointer; position: relative; z-index: 1;">
+              <div class="stepper-icon-circle" style="width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.25s ease;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div style="padding-top: 0.2rem;">
+                <div class="stepper-title" style="font-size: 0.85rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; transition: color 0.25s ease;">CASE DETAILS</div>
+                <div style="font-size: 0.78rem; color: #64748b; font-weight: 500; margin-top: 0.15rem;">Provide case information</div>
+              </div>
+            </div>
+
+            <!-- STEP 2: EVIDENCE PLAN -->
+            <div class="create-stepper-item" id="stepper-step-2" onclick="setCreateCaseStep(2);" style="display: flex; align-items: flex-start; gap: 1rem; cursor: pointer; position: relative; z-index: 1;">
+              <div class="stepper-icon-circle" style="width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.25s ease;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </div>
+              <div style="padding-top: 0.2rem;">
+                <div class="stepper-title" style="font-size: 0.85rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; transition: color 0.25s ease;">EVIDENCE PLAN</div>
+                <div style="font-size: 0.78rem; color: #64748b; font-weight: 500; margin-top: 0.15rem;">Define expected evidence</div>
+              </div>
+            </div>
+
+            <!-- STEP 3: REVIEW & INITIALIZE -->
+            <div class="create-stepper-item" id="stepper-step-3" onclick="setCreateCaseStep(3);" style="display: flex; align-items: flex-start; gap: 1rem; cursor: pointer; position: relative; z-index: 1;">
+              <div class="stepper-icon-circle" style="width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.25s ease;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              </div>
+              <div style="padding-top: 0.2rem;">
+                <div class="stepper-title" style="font-size: 0.85rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; transition: color 0.25s ease;">REVIEW</div>
+                <div style="font-size: 0.78rem; color: #64748b; font-weight: 500; margin-top: 0.15rem;">Confirm and initialize</div>
+              </div>
+            </div>
+
+          </div>
+
+          <div style="margin-top: 2.5rem; display: flex; flex-direction: column; align-items: center; gap: 1.5rem;">
+            <img src="images/c1.png?v=71.0" style="width: 100%; max-width: 240px; height: auto; object-fit: contain; mix-blend-mode: multiply; opacity: 0.83; filter: grayscale(0.85) contrast(1.25) brightness(1.08); -webkit-mask-image: radial-gradient(ellipse 75% 75% at 48% 52%, #000 35%, transparent 82%); mask-image: radial-gradient(ellipse 75% 75% at 48% 52%, #000 35%, transparent 82%);" alt="Chain of Custody Graphic">
+            <button type="button" onclick="switchWorkspaceSection('sec-cases');" style="background: transparent; border: none; color: #64748b; font-weight: 700; font-size: 0.85rem; cursor: pointer; padding: 0; text-align: center;">← Cancel and return</button>
+          </div>
+        </div>
+
+        <!-- Box-Free Single Canvas Form Column (All Fields Together) -->
+        <div style="flex: 1; max-width: 620px;">
+          <form id="create-case-page-form" onsubmit="handleCreateCasePageSubmit(event);" style="display: flex; flex-direction: column; gap: 2.25rem;">
+
+            <input type="hidden" id="create-pg-investigator-val" value="investigator1">
+            <input type="hidden" id="create-pg-priority-val" value="Medium">
+
+            <!-- Field 1: Case Title / Reference -->
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem;">Case Title / Reference <span style="color: #dc2626;">*</span></label>
+              <input type="text" id="create-pg-case-name" required placeholder="e.g. Memory Leak Incident 2026" onfocus="setCreateCaseStep(1);" style="width: 100%; border: none; border-bottom: 1.5px solid #cbd5e1; padding: 0.6rem 0; font-size: 1.15rem; font-weight: 700; color: #0f172a; background: transparent; outline: none; transition: border-color 0.2s ease;">
+            </div>
+
+            <!-- Field 2: Searchable Custom Dropdown for Lead Investigator -->
+            <div style="position: relative;">
+              <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem;">Lead Investigator <span style="color: #dc2626;">*</span></label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="text" id="create-pg-investigator-search" placeholder="Type to search lead investigator..." value="investigator1" onfocus="toggleInvestigatorDropdown(true); setCreateCaseStep(1);" oninput="filterInvestigatorDropdown(this.value);" autocomplete="off" style="width: 100%; border: none; border-bottom: 1.5px solid #cbd5e1; padding: 0.6rem 2rem 0.6rem 0; font-size: 1.05rem; font-weight: 600; color: #0f172a; background: transparent; outline: none; transition: border-color 0.2s ease;">
+                <div style="position: absolute; right: 0; pointer-events: none; color: #94a3b8; font-size: 0.85rem;">▾</div>
+              </div>
+
+              <!-- Searchable Borderless Floating Popover -->
+              <div id="investigator-dropdown-popover" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 0.2rem; background: #ffffff; border: none; border-bottom: 1.5px solid #cbd5e1; box-shadow: 0 6px 20px -5px rgba(15, 23, 42, 0.08); z-index: 100; max-height: 200px; overflow-y: auto; padding: 0.2rem 0; border-radius: 0 0 8px 8px;">
+                <div class="investigator-option" onclick="selectInvestigatorOption('investigator1');" style="padding: 0.65rem 1.1rem; font-size: 0.9rem; font-weight: 600; color: #1e293b; cursor: pointer; transition: background 0.15s ease;">investigator1</div>
+                <div class="investigator-option" onclick="selectInvestigatorOption('admin');" style="padding: 0.65rem 1.1rem; font-size: 0.9rem; font-weight: 600; color: #1e293b; cursor: pointer; transition: background 0.15s ease;">admin</div>
+                <div class="investigator-option" onclick="selectInvestigatorOption('aswith');" style="padding: 0.65rem 1.1rem; font-size: 0.9rem; font-weight: 600; color: #1e293b; cursor: pointer; transition: background 0.15s ease;">aswith</div>
+              </div>
+            </div>
+
+            <!-- Side-by-Side Row: Priority & Evidence Stepper -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem;">
+              
+              <!-- Priority Level Text Pills (Zero Colored Dots) -->
+              <div>
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.6rem;">Priority Level</label>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <button type="button" class="custom-priority-pill selected" data-priority="Medium" onclick="selectPillPriority('Medium'); setCreateCaseStep(2);" style="border: 1.5px solid #1d4ed8; background: #eff6ff; color: #1d4ed8; padding: 0.45rem 1.1rem; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease;">
+                    Medium
+                  </button>
+                  <button type="button" class="custom-priority-pill" data-priority="Critical" onclick="selectPillPriority('Critical'); setCreateCaseStep(2);" style="border: 1.5px solid #e2e8f0; background: #ffffff; color: #475569; padding: 0.45rem 1.1rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
+                    Critical
+                  </button>
+                  <button type="button" class="custom-priority-pill" data-priority="High" onclick="selectPillPriority('High'); setCreateCaseStep(2);" style="border: 1.5px solid #e2e8f0; background: #ffffff; color: #475569; padding: 0.45rem 1.1rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
+                    High
+                  </button>
+                  <button type="button" class="custom-priority-pill" data-priority="Low" onclick="selectPillPriority('Low'); setCreateCaseStep(2);" style="border: 1.5px solid #e2e8f0; background: #ffffff; color: #475569; padding: 0.45rem 1.1rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
+                    Low
+                  </button>
+                </div>
+              </div>
+
+              <!-- Expected Evidence Items Stepper (Tight Underline) -->
+              <div>
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.5rem;">Expected Evidence Items</label>
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #cbd5e1; padding: 0.3rem 0; max-width: 120px;">
+                  <button type="button" onclick="adjustEvidenceCount(-1); setCreateCaseStep(2);" style="background: transparent; border: none; font-size: 1.2rem; font-weight: 800; color: #64748b; cursor: pointer; padding: 0 0.25rem; outline: none;">−</button>
+                  <span id="create-pg-expected-count" style="font-size: 1.05rem; font-weight: 800; color: #0f172a;">2</span>
+                  <button type="button" onclick="adjustEvidenceCount(1); setCreateCaseStep(2);" style="background: transparent; border: none; font-size: 1.2rem; font-weight: 800; color: #64748b; cursor: pointer; padding: 0 0.25rem; outline: none;">+</button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Field 4: Case Description / Scope (Tight Spacing) -->
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem;">Case Description / Scope</label>
+              <textarea id="create-pg-description" onfocus="setCreateCaseStep(3);" rows="2" placeholder="Scope of cyber incident and digital forensics investigation..." style="width: 100%; border: none; border-bottom: 1.5px solid #cbd5e1; padding: 0.4rem 0; font-size: 0.95rem; color: #0f172a; background: transparent; outline: none; resize: vertical; font-family: inherit; transition: border-color 0.2s ease; margin-bottom: 0.5rem;"></textarea>
+            </div>
+
+            <!-- Submit Button (Ultra-Light Minimalist Border Button) -->
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+              <button type="submit" id="btn-submit-create-case-pg" style="background: #ffffff; color: #0f172a; border: 1.5px solid #e2e8f0; padding: 0.55rem 1.4rem; font-weight: 700; font-size: 0.82rem; border-radius: 20px; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; gap: 0.4rem; outline: none;">
+                <span>Initialize Case File</span>
+                <span style="color: #1d4ed8; font-size: 0.95rem;">➔</span>
+              </button>
+            </div>
+
+          </form>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- SECTION 1: CASE DASHBOARD (1:1 WITH DESIGN MOCKUP media_1787769402483.png) -->
+    <section id="sec-cases" class="workspace-section">
+
+      <!-- Top 3-Column Bar: Left Lens Art (ca1.png & hi8.png) + 3 Stat Items Timeline Component + Right Action & Quote (1:1 media_1788197025160.png) -->
+      <div class="cases-top-bar" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding: 0.5rem 0 1.75rem 0; border-bottom: 1px solid #f1f5f9; position: relative; width: 100%; gap: 1.25rem;">
+        
+        <!-- Left Column: Forensic Lens with Sherlock Silhouette & Ambient Fingerprint (ca1.png & hi8.png) -->
+        <div class="cases-top-art-col" style="position: relative; width: 250px; height: 135px; display: flex; align-items: center; justify-content: flex-start; flex-shrink: 0;">
+          <img src="images/hi8.png" alt="Fingerprint Ambient" style="position: absolute; left: 110px; top: 12px; width: 105px; opacity: 0.16; pointer-events: none; mix-blend-mode: multiply;">
+          <img src="images/ca1.png" alt="Forensic Analysis Lens" style="position: relative; max-height: 125px; width: auto; object-fit: contain; z-index: 2; filter: drop-shadow(0 10px 18px rgba(29, 78, 216, 0.12));">
+        </div>
+
+        <!-- Center Timeline Stat Component (1:1 with Pic 1) -->
+        <div class="replica-stats-timeline-container" style="flex: 1; max-width: 580px; margin: 0 1.25rem;">
+          <div class="replica-stats-grid">
+            <div class="replica-stat-col">
+              <span class="replica-stat-label">ACTIVE CASES</span>
+              <span class="replica-stat-number blue" id="cases-pg-active-count">00</span>
+            </div>
+            <div class="replica-stat-col">
+              <span class="replica-stat-label">SOLVED CASES</span>
+              <span class="replica-stat-number dark" id="cases-pg-solved-count">00</span>
+            </div>
+            <div class="replica-stat-col">
+              <span class="replica-stat-label">TOTAL CASES</span>
+              <span class="replica-stat-number blue" id="cases-pg-total-count">00</span>
+            </div>
+          </div>
+
+          <div class="replica-timeline-track-row">
+            <div class="replica-timeline-line"></div>
+            <div class="replica-timeline-dots-grid">
+              <div class="replica-timeline-dot-cell"><span class="timeline-dot blue"></span></div>
+              <div class="replica-timeline-dot-cell"><span class="timeline-dot dark"></span></div>
+              <div class="replica-timeline-dot-cell"><span class="timeline-dot blue"></span></div>
+            </div>
+          </div>
+
+          <div class="replica-stats-subgrid">
+            <div class="replica-stat-sublabel">cases in progress</div>
+            <div class="replica-stat-sublabel">cases resolved</div>
+            <div class="replica-stat-sublabel">all investigations</div>
+          </div>
+        </div>
+
+        <!-- Right Action & Quote Area -->
+        <div class="cases-top-right-col" style="position: relative; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; height: 135px; flex-shrink: 0; min-width: 250px;">
+          <!-- + NEW CASE Pill Button -->
+          <button type="button" class="btn-new-case-pill" onclick="openCreateCaseModal();" style="display: flex; align-items: center; gap: 0.5rem; border: 1.5px solid #bfdbfe; color: #1d4ed8; background: #ffffff; padding: 0.6rem 1.6rem; border-radius: 9999px; font-weight: 700; font-size: 0.85rem; cursor: pointer; letter-spacing: 0.06em; text-transform: uppercase; transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(29,78,216,0.06);" onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#93c5fd'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#ffffff'; this.style.borderColor='#bfdbfe'; this.style.transform='translateY(0)';">
+            <span style="font-size: 1.15rem; line-height: 1; color: #1d4ed8; font-weight: 800;">+</span>
+            <span>NEW CASE</span>
+          </button>
+
+          <!-- Quote & Subtext with Ambient Fingerprint Watermark -->
+          <div style="position: relative; text-align: right; margin-top: auto; padding-right: 0.5rem;">
+            <img src="images/hi8.png" alt="Fingerprint" style="position: absolute; right: -8px; top: -14px; width: 75px; opacity: 0.13; pointer-events: none; z-index: 1; mix-blend-mode: multiply;">
+            <div style="position: relative; z-index: 2;">
+              <span style="font-family: 'Dancing Script', 'Caveat', cursive, serif; font-size: 1.18rem; color: #60a5fa; font-weight: 600; font-style: italic; display: block; line-height: 1.25;">"Every fragment tells a story."</span>
+              <span style="font-size: 0.76rem; color: #64748b; font-weight: 500; display: block; margin-top: 2px;">Sherlock AI connects what others can't see.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Main 2-Column Split Grid for Cases Page -->
+      <div class="cases-page-main-grid" style="display: grid; grid-template-columns: 210px 1fr; gap: 1.25rem; align-items: flex-start;">
+        
+        <!-- LEFT FOCUS COLUMN (1:1 WITH media_1788007853923.png) -->
+        <div class="cases-left-focus-column" style="display: flex; flex-direction: column; gap: 1.25rem;">
+          
+          <!-- Header Title & Target Radar Icon -->
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 0.75rem; font-weight: 800; color: #1e293b; letter-spacing: 0.1em; font-family: 'Outfit', sans-serif;">FOCUS</span>
+            <div style="width: 26px; height: 26px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            </div>
+          </div>
+
+          <!-- Search Input Box -->
+          <div style="position: relative;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#94a3b8" stroke-width="2" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%);"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="cases-search-filter" placeholder="Search cases..." style="width: 100%; padding: 0.55rem 0.75rem 0.55rem 2.1rem; font-size: 0.8rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; outline: none; box-sizing: border-box; font-family: inherit;">
+          </div>
+
+          <!-- PRIORITY FILTER Section -->
+          <div>
+            <div style="font-size: 0.65rem; font-weight: 800; color: #64748b; letter-spacing: 0.08em; margin-bottom: 0.6rem; text-transform: uppercase;">PRIORITY FILTER</div>
+            <div style="display: flex; flex-direction: column; gap: 0.45rem;">
+              <div onclick="selectPrioritySortFilter('Critical', 'Critical Only');" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: #334155; cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 6px; transition: background 0.15s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="color: #dc2626; font-size: 0.6rem;">●</span>
+                  <span>CRITICAL</span>
+                </span>
+                <span id="focus-count-critical" style="color: #64748b; font-weight: 700;">2</span>
+              </div>
+              <div onclick="selectPrioritySortFilter('High', 'High Only');" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: #334155; cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 6px; transition: background 0.15s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="color: #d97706; font-size: 0.6rem;">●</span>
+                  <span>HIGH</span>
+                </span>
+                <span id="focus-count-high" style="color: #64748b; font-weight: 700;">3</span>
+              </div>
+              <div onclick="selectPrioritySortFilter('Medium', 'Medium Only');" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: #334155; cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 6px; transition: background 0.15s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="color: #2563eb; font-size: 0.6rem;">●</span>
+                  <span>MEDIUM</span>
+                </span>
+                <span id="focus-count-medium" style="color: #64748b; font-weight: 700;">3</span>
+              </div>
+              <div onclick="selectPrioritySortFilter('Low', 'Low Only');" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: #334155; cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 6px; transition: background 0.15s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="color: #16a34a; font-size: 0.6rem;">●</span>
+                  <span>LOW</span>
+                </span>
+                <span id="focus-count-low" style="color: #64748b; font-weight: 700;">1</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MY CASES Section -->
+          <div>
+            <div style="font-size: 0.65rem; font-weight: 800; color: #64748b; letter-spacing: 0.08em; margin-bottom: 0.6rem; text-transform: uppercase;">MY CASES</div>
+            <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+              <div id="my-cases-tab-all" onclick="selectMyCasesFilter('ALL');" style="display: flex; align-items: center; justify-content: space-between; background: #eff6ff; border-radius: 10px; padding: 0.5rem 0.75rem; font-size: 0.78rem; font-weight: 700; color: #2563eb; cursor: pointer; transition: all 0.15s ease;">
+                <span>All Cases</span>
+                <span id="focus-count-all" style="font-weight: 800;">9</span>
+              </div>
+              <div id="my-cases-tab-created" onclick="selectMyCasesFilter('CREATED');" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; font-size: 0.78rem; font-weight: 600; color: #475569; cursor: pointer; transition: all 0.15s ease;">
+                <span>Created By Me</span>
+                <span id="focus-count-created" style="color: #64748b;">5</span>
+              </div>
+              <div id="my-cases-tab-assigned" onclick="selectMyCasesFilter('ASSIGNED');" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; font-size: 0.78rem; font-weight: 600; color: #475569; cursor: pointer; transition: all 0.15s ease;">
+                <span>Assigned To Me</span>
+                <span id="focus-count-assigned" style="color: #64748b;">9</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CASE INSIGHTS Card -->
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.1rem; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 0.6rem; position: relative; overflow: hidden; margin-top: 0.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.65rem; font-weight: 800; color: #64748b; letter-spacing: 0.08em; text-transform: uppercase;">CASE INSIGHTS</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#64748b" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </div>
+            
+            <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+              <div>
+                <div id="insights-cases-count" style="font-size: 1.8rem; font-weight: 800; color: #2563eb; font-family: 'Outfit', sans-serif; line-height: 1;">9</div>
+                <div style="font-size: 0.75rem; font-weight: 700; color: #1e293b; margin-top: 0.4rem;">Active Investigations</div>
+                <div style="font-size: 0.68rem; color: #64748b; margin-top: 2px;">Across all priorities</div>
+              </div>
+
+              <!-- Radar Concentric Scanner Graphic -->
+              <div style="width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle, rgba(37,99,235,0.15) 0%, rgba(37,99,235,0.02) 70%); border: 1.5px solid #bfdbfe; display: flex; align-items: center; justify-content: center; position: relative;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; border: 1.5px dashed #93c5fd; display: flex; align-items: center; justify-content: center;">
+                  <div style="width: 12px; height: 12px; border-radius: 50%; background: #2563eb; box-shadow: 0 0 10px #2563eb;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden focus list container for legacy JS binding compatibility -->
+          <div id="cases-focus-list-container" style="display: none;"></div>
+          <div id="cases-focus-count-label" style="display: none;"></div>
+
+        </div>
+
+        <!-- RIGHT ACTIVE CASES DASHBOARD -->
+        <div class="cases-right-dashboard-column">
+          <!-- Dashboard Title Bar -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid #f1f5f9;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="color: #1d4ed8; font-size: 0.8rem;">●</span>
+              <span style="font-size: 0.85rem; font-weight: 800; color: #0f172a; letter-spacing: 0.05em;">ACTIVE CASES</span>
+            </div>
+            <div style="position: relative; display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.78rem; color: #64748b;">Sort by:</span>
+              <button type="button" id="priority-sort-trigger" onclick="togglePrioritySortPopover();" style="border: none; background: transparent; font-size: 0.82rem; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 0.35rem;">
+                <span id="priority-sort-label">All Priorities</span>
+                <span style="font-size: 0.7rem; color: #64748b;">▾</span>
+              </button>
+              
+              <!-- Sleek Custom Dropdown Popover Menu -->
+              <div id="priority-sort-popover" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 0.5rem; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1); width: 160px; z-index: 100; overflow: hidden; padding: 0.35rem 0;">
+                <div class="sort-option-item" onclick="selectPrioritySortFilter('ALL', 'All Priorities');" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; transition: background 0.15s;">All Priorities</div>
+                <div class="sort-option-item" onclick="selectPrioritySortFilter('Critical', 'Critical Only');" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; transition: background 0.15s;">Critical Only</div>
+                <div class="sort-option-item" onclick="selectPrioritySortFilter('High', 'High Only');" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; transition: background 0.15s;">High Only</div>
+                <div class="sort-option-item" onclick="selectPrioritySortFilter('Medium', 'Medium Only');" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; transition: background 0.15s;">Medium Only</div>
+                <div class="sort-option-item" onclick="selectPrioritySortFilter('Low', 'Low Only');" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; transition: background 0.15s;">Low Only</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detailed Active Case Cards Container (Matching media_1787769402483.png) -->
+          <div id="cases-detailed-cards-container" style="display: flex; flex-direction: column; gap: 1.25rem;"></div>
+
+          <!-- Bottom Telemetry Watermark & Status Line -->
+          <div style="text-align: center; margin-top: 4rem; padding-top: 2rem;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4rem;">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#94a3b8" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span style="font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.15em;">FOCUS. ANALYZE. RESOLVE.</span>
+              <div style="width: 24px; height: 2px; background: #1d4ed8; border-radius: 2px;"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- FOOTER ENDNOTE BAR FROM WIRED MOCKUP -->
+      <div id="workspace-endnote" class="wireframe-endnote" style="margin-top: 2rem; padding: 0.75rem 1.25rem; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #64748b;">
+        <div style="display: flex; gap: 1.5rem; align-items: center;">
+          <span><strong style="color: #1d4ed8;">Endnote:</strong> HMACFR Forensic Execution Environment Layer 1</span>
+          <span>● Cryptographic Hash Integrity: <span style="color: #1d4ed8; font-weight: 700;">SHA256-HMAC Verified</span></span>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <span>WebSocket: <span style="color: #1d4ed8; font-weight: 700;" id="endnote-ws-status">Connected</span></span>
+          <span>● 2026-08-11</span>
+        </div>
+      </div>
+    </section>
+
+
+
+    <!-- SECTION 2: EVIDENCE INGESTION (BOX-FREE MINIMALIST CANVAS) -->
+    <section id="sec-ingest" class="workspace-section" style="padding: 2.5rem 2rem 4rem 2rem; max-width: 1280px; margin: 0 auto;">
+      
+      <!-- Top Header Bar (No ESC exit button) -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 3rem;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 800; color: #94a3b8; letter-spacing: 0.08em; margin-bottom: 0.5rem; text-transform: uppercase;">
+            <span style="cursor: pointer;" onclick="switchWorkspaceSection('sec-cases');">EVIDENCE</span>
+            <span style="color: #cbd5e1;">/</span>
+            <span style="color: #64748b;">BATCH INGESTION</span>
+          </div>
+
+          <h1 style="font-size: 1.45rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; margin: 0; letter-spacing: -0.01em;">Digital Evidence Ingestion Engine</h1>
+          <p style="font-size: 0.88rem; color: #64748b; margin-top: 0.25rem;">Upload multiple evidence files per investigation with real-time SHA-256 digests and HMAC signatures.</p>
+        </div>
+      </div>
+
+      <div id="upload-result-box" style="display: none; margin-bottom: 1.5rem;"></div>
+
+      <!-- Box-Free Canvas 2-Column Grid (Form + Sticky e1.png Graphic) -->
+      <div style="display: flex; gap: 4rem; align-items: flex-start; justify-content: space-between;">
+
+        <form id="upload-evidence-form" style="flex: 1; max-width: 620px; display: flex; flex-direction: column; gap: 2.25rem;">
+
+          <!-- Hidden Native Select & Input for JS Compatibility -->
+          <select id="upload-case-id" class="form-select" required style="display: none !important; position: absolute !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; border: none !important;">
+            <option value="">-- Select Case --</option>
+          </select>
+          <input type="hidden" id="upload-count" value="1">
+
+          <!-- Field 1: Searchable Custom Dropdown for Target Case -->
+          <div style="position: relative; width: 100%;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem;">Select Target Case <span style="color: #dc2626;">*</span></label>
+            <div style="position: relative; display: flex; align-items: center;">
+              <input type="text" id="ingest-case-search" placeholder="Type to search case file..." onfocus="toggleIngestCaseDropdown(true);" oninput="filterIngestCaseDropdown(this.value);" autocomplete="off" style="width: 100%; border: none; border-bottom: 1.5px solid #cbd5e1; padding: 0.6rem 2rem 0.6rem 0; font-size: 1.05rem; font-weight: 600; color: #0f172a; background: transparent; outline: none; transition: border-color 0.2s ease;">
+              <div style="position: absolute; right: 0; pointer-events: none; color: #94a3b8; font-size: 0.85rem;">▾</div>
+            </div>
+
+            <!-- Searchable Borderless Floating Popover -->
+            <div id="ingest-case-dropdown-popover" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 0.2rem; background: #ffffff; border: none; border-bottom: 1.5px solid #cbd5e1; box-shadow: 0 6px 20px -5px rgba(15, 23, 42, 0.08); z-index: 100; max-height: 200px; overflow-y: auto; padding: 0.2rem 0; border-radius: 0 0 8px 8px;">
+              <!-- Dynamically populated from JS case list -->
+            </div>
+          </div>
+
+          <!-- Side-by-Side Row: Ingestion Stepper & Investigator -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; width: 100%;">
+            
+            <!-- Stepper for Evidence Items Count -->
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.5rem;">Evidence Items to Upload</label>
+              <div style="display: flex; align-items: center; gap: 1.25rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #cbd5e1; padding: 0.3rem 0; width: 110px;">
+                  <button type="button" onclick="window.adjustStepper('upload-count', -1);" style="background: transparent; border: none; font-size: 1.2rem; font-weight: 800; color: #64748b; cursor: pointer; padding: 0 0.25rem; outline: none;">−</button>
+                  <span id="ingest-expected-count" style="font-size: 1.05rem; font-weight: 800; color: #0f172a;">1</span>
+                  <button type="button" onclick="window.adjustStepper('upload-count', 1);" style="background: transparent; border: none; font-size: 1.2rem; font-weight: 800; color: #64748b; cursor: pointer; padding: 0 0.25rem; outline: none;">+</button>
+                </div>
+                <button type="button" id="btn-add-item-card" style="border: 1.5px solid #e2e8f0; background: #ffffff; color: #475569; padding: 0.4rem 0.9rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease; outline: none;">
+                  + Add Item
+                </button>
+              </div>
+            </div>
+
+            <!-- Ingesting Investigator -->
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #64748b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem;">Ingesting Investigator</label>
+              <input type="text" id="upload-investigator" class="investigator-autofill" required style="width: 100%; border: none; border-bottom: 1.5px solid #cbd5e1; padding: 0.55rem 0; font-size: 1rem; font-weight: 600; color: #0f172a; background: transparent; outline: none; transition: border-color 0.2s ease;">
+            </div>
+
+          </div>
+
+          <!-- Dynamic Container for Multiple Evidence File Cards -->
+          <div id="evidence-items-container" style="display: flex; flex-direction: column; gap: 2rem; width: 100%; margin-top: 0.5rem;">
+            <!-- Dynamically populated by JS based on upload-count -->
+          </div>
+
+          <!-- Submit Button (Ultra-Light Minimalist Border Button) -->
+          <div style="display: flex; justify-content: flex-end; width: 100%; margin-top: 1rem;">
+            <button type="submit" id="btn-submit-batch-upload" style="background: #ffffff; color: #0f172a; border: 1.5px solid #e2e8f0; padding: 0.55rem 1.4rem; font-weight: 700; font-size: 0.82rem; border-radius: 20px; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; gap: 0.4rem; outline: none;">
+              <span>Ingest All (1) Evidence Artifacts</span>
+              <span style="color: #1d4ed8; font-size: 0.95rem;">➔</span>
+            </button>
+          </div>
+
+        </form>
+
+        <!-- Right Column: Dynamic Scroll-Driven e1.png Graphic Stream -->
+        <div id="ingest-right-stream" style="width: 440px; flex-shrink: 0; position: relative; pointer-events: none; min-height: 500px;">
+          <div style="position: absolute; right: 0; top: 0px; width: 440px; pointer-events: none;">
+            <img src="images/e1.png" style="width: 100%; max-width: 440px; height: auto; object-fit: contain; mix-blend-mode: multiply; opacity: 0.88; filter: grayscale(0.85) contrast(1.05) brightness(1.02); -webkit-mask-image: radial-gradient(circle at 50% 50%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 98%); mask-image: radial-gradient(circle at 50% 50%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 98%);" alt="Digital Evidence Graphic">
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- SECTION 3: LAYER 1 PRESERVATION ENGINE -->
+    <section id="sec-preservation" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">Layer 1 Evidence Preservation Engine</h1>
+          <div class="section-desc">Executes multi-pass hashing (SHA-256 + MD5), AES-256-GCM encryption at rest, OS read-only locking, and vault deposit.</div>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <select id="preservation-case-select" class="form-select" style="min-width: 240px;">
+            <option value="">-- Select Case --</option>
+          </select>
+          <button id="btn-preserve-case" class="btn btn-primary">Batch Preserve Case</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="preservation-status-alert" style="display: none;"></div>
+
+        <!-- Evidence Preservation Catalog Table -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Evidence ID</th>
+                <th>Filename</th>
+                <th>Category</th>
+                <th>SHA-256 Digest</th>
+                <th>MD5 Digest</th>
+                <th>AES-256 Encrypted</th>
+                <th>Read-Only Lock</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="preservation-table-body">
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Select a case above or ingest evidence to view preservation statuses.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- SECTION 4: MULTI-FACTOR VERIFICATION & QUARANTINE AUDIT -->
+    <section id="sec-audit" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">Multi-Factor Integrity Audit Center</h1>
+          <div class="section-desc">Automated multi-factor audit checking SHA-256 hash digests, HMAC signatures, read-only permissions, and quarantine triggers.</div>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <select id="audit-case-select" class="form-select" style="min-width: 240px;">
+            <option value="">-- Select Case to Audit --</option>
+          </select>
+          <button id="btn-audit-case" class="btn btn-primary">Run Batch Audit</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <!-- Initial Audit Empty State -->
+        <div id="audit-empty-state" class="empty-state">
+          <div class="empty-state-icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="empty-state-title">Multi-Factor Integrity Audit Ready</div>
+          <div class="empty-state-subtitle">Select an active investigation case from the dropdown above and click "Run Batch Audit" to initiate automated SHA-256 verification and 3D laser scan analysis.</div>
+        </div>
+
+        <div id="audit-report-container" style="display: none;">
+          <!-- 3D Multi-Factor Audit Laser Scanner -->
+          <div class="audit-3d-viewport">
+            <canvas id="three-audit-canvas"></canvas>
+          </div>
+
+          <!-- Audit Metrics Row -->
+          <div class="stats-grid" style="margin-bottom: 1.5rem;">
+            <div class="stat-card indigo">
+              <div class="stat-label">Total Audited</div>
+              <div class="stat-value" id="audit-total-count">0</div>
+            </div>
+            <div class="stat-card emerald">
+              <div class="stat-label">Valid (Intact)</div>
+              <div class="stat-value" id="audit-valid-count">0</div>
+            </div>
+            <div class="stat-card amber">
+              <div class="stat-label">Tampered</div>
+              <div class="stat-value" id="audit-tampered-count" style="color: var(--accent-danger);">0</div>
+            </div>
+            <div class="stat-card cyan">
+              <div class="stat-label">Missing</div>
+              <div class="stat-value" id="audit-missing-count">0</div>
+            </div>
+          </div>
+
+          <!-- Audit Results Table -->
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Evidence ID</th>
+                  <th>Filename</th>
+                  <th>SHA-256 Digest</th>
+                  <th>HMAC Signature</th>
+                  <th>Read-Only Status</th>
+                  <th>Integrity Status</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- SECTION 5: EVIDENCE VAULT REPOSITORY -->
+    <section id="sec-evidence-vault" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-emerald); margin-right: 0.4rem;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            Evidence Vault Repository
+          </h1>
+          <div class="section-desc">Central master repository of all ingested digital evidence artifacts across all investigation cases showing case references, filenames, types, file sizes, SHA-256 digests, and upload timestamps.</div>
+        </div>
+        <div>
+          <span class="hud-pill" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+            <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="color: var(--accent-emerald); margin-right: 0.3rem;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Total Evidence Items: <strong id="vault-repo-total-count" style="color: var(--accent-emerald-light);">0</strong>
+          </span>
+        </div>
+      </div>
+
+      <div class="card">
+        <!-- Vault Repository Filter Toolbar -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: center; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-card);">
+          <div style="flex: 1; min-width: 220px;">
+            <label class="form-label" for="vault-repo-search-input" style="font-size: 0.75rem; text-transform: uppercase; color: var(--accent-emerald); letter-spacing: 0.05em;">Search Evidence:</label>
+            <input type="text" id="vault-repo-search-input" class="form-input" placeholder="Search by filename, case ID, category, or SHA-256 hash..." style="padding: 0.45rem 0.65rem; font-size: 0.82rem;">
+          </div>
+          <div style="width: 240px;">
+            <label class="form-label" for="vault-repo-case-select" style="font-size: 0.75rem; text-transform: uppercase; color: var(--accent-emerald); letter-spacing: 0.05em;">Filter by Case:</label>
+            <select id="vault-repo-case-select" class="form-select" style="padding: 0.45rem 0.65rem; font-size: 0.82rem;">
+              <option value="">-- All Investigation Cases --</option>
+            </select>
+          </div>
+          <div style="width: 200px;">
+            <label class="form-label" for="vault-repo-category-select" style="font-size: 0.75rem; text-transform: uppercase; color: var(--accent-emerald); letter-spacing: 0.05em;">Category / Type:</label>
+            <select id="vault-repo-category-select" class="form-select" style="padding: 0.45rem 0.65rem; font-size: 0.82rem;">
+              <option value="ALL">All Categories</option>
+              <option value="Memory">Memory (RAM Dump)</option>
+              <option value="Disk">Disk Image / File</option>
+              <option value="PCAP">Network PCAP Packets</option>
+              <option value="Registry">System Registry / Logs</option>
+              <option value="Browser">Browser Artifacts</option>
+              <option value="Malware">Malware Payload</option>
+              <option value="Document">Documents & Media</option>
+            </select>
+          </div>
+          <div style="align-self: flex-end;">
+            <button type="button" id="btn-refresh-vault-repo" class="btn btn-secondary" style="padding: 0.45rem 0.85rem; font-size: 0.82rem;">
+              ↺ Refresh Repository
+            </button>
+          </div>
+        </div>
+
+        <!-- Master Evidence Vault Table -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Case Reference</th>
+                <th>Evidence Filename</th>
+                <th>Evidence Type / Category</th>
+                <th>File Size</th>
+                <th>SHA-256 Digest</th>
+                <th>Date Uploaded</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="vault-repo-table-body">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading Evidence Vault Repository...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
+
+    <!-- SECTION 6: CHAIN OF CUSTODY TIMELINE -->
+    <section id="sec-custody" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">Immutable Chain of Custody Audit Log</h1>
+          <div class="section-desc">Chronological audit log of all transfers, inspections, hash calculations, encryptions, and verification audits.</div>
+        </div>
+        <select id="custody-evidence-select" class="form-select" style="min-width: 280px;">
+          <option value="">-- Select Evidence Item --</option>
+        </select>
+      </div>
+
+      <div class="card" style="max-width: 960px; margin: 0 auto;">
+        <!-- Initial Custody Empty State -->
+        <div id="custody-empty-state" class="empty-state">
+          <div class="empty-state-icon">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <div class="empty-state-title">Immutable Chain of Custody Audit Log</div>
+          <div class="empty-state-subtitle">Select an evidence artifact from the dropdown menu above to inspect its 3D block chain pipeline and complete audit trail.</div>
+        </div>
+
+        <!-- 3D Interactive Chain of Custody Pipeline Viewport -->
+        <div id="custody-viewport-container" class="custody-3d-viewport" style="display: none;">
+          <canvas id="three-custody-canvas"></canvas>
+        </div>
+
+        <div id="custody-timeline-container" style="display: none;">
+        </div>
+      </div>
+    </section>
+
+
+    <!-- SECTION: MULTI-AGENT ANALYSIS (STAGE 2 ARCHITECTURE) -->
+    <section id="sec-multi-agent" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-amber); margin-right: 0.4rem;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Multi-Agent Forensic Analysis Engine
+          </h1>
+          <div class="section-desc">Distributed specialized agent network for parallel forensic analysis across PCAP streams, RAM dumps, and system logs.</div>
+        </div>
+        <div>
+          <span class="hud-pill" style="border-color: var(--accent-amber); color: var(--accent-amber);">
+            ⏳ STAGE 2 — UNDER DEVELOPMENT
+          </span>
+        </div>
+      </div>
+
+      <!-- Agent Cards Grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
+        <div class="card" onclick="showFutureFeatureNotice('Supervisor Agent', '(Available in future — working on it)');" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 1rem; color: var(--accent-emerald-light); margin: 0;">Supervisor Agent</h3>
+            <span class="badge badge-emerald">Active Router</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Orchestrates forensic task distribution, evaluates evidence sufficiency, and manages sub-agent dispatch loops.</p>
+          <button class="btn btn-secondary btn-sm" style="width: 100%;">Configure Routing Strategy</button>
+        </div>
+
+        <div class="card" onclick="showFutureFeatureNotice('Network Forensic Agent', '(Available in future — working on it)');" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 1rem; color: var(--accent-cyan); margin: 0;">Network Agent</h3>
+            <span class="badge badge-amber">Stage 2 Future</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Parses PCAP network streams, extracts DNS queries, TCP/UDP sockets, HTTP headers, and anomaly beacons.</p>
+          <button class="btn btn-secondary btn-sm" style="width: 100%;">Inspect PCAP Parsers</button>
+        </div>
+
+        <div class="card" onclick="showFutureFeatureNotice('Volatile Memory Agent', '(Available in future — working on it)');" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 1rem; color: #a855f7; margin: 0;">Memory Agent</h3>
+            <span class="badge badge-amber">Stage 2 Future</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Inspects volatile RAM dumps, process trees, VAD nodes, unlinks hidden modules, and extracts memory artifacts.</p>
+          <button class="btn btn-secondary btn-sm" style="width: 100%;">Inspect Memory Scanners</button>
+        </div>
+
+        <div class="card" onclick="showFutureFeatureNotice('System Log Agent', '(Available in future — working on it)');" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 1rem; color: #38bdf8; margin: 0;">Log Agent</h3>
+            <span class="badge badge-amber">Stage 2 Future</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Audits Windows Event Logs, Sysmon telemetry, system service events, and Windows Registry hives.</p>
+          <button class="btn btn-secondary btn-sm" style="width: 100%;">Inspect Log Rules</button>
+        </div>
+      </div>
+
+      <!-- Correlation Engine Sandbox Card -->
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title">Multi-Source Correlation Engine Sandbox</h2>
+          <button class="btn btn-primary" onclick="showFutureFeatureNotice('Correlation Engine', '(Available in future — working on it)');">Execute Multi-Agent Correlation</button>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">Cross-references extracted network indicators with in-memory processes and Windows Event Log timestamps to verify evidence sufficiency.</p>
+        <div style="background: rgba(0,0,0,0.3); border: 1px dashed var(--border-card); padding: 2rem; text-align: center; border-radius: var(--radius-md);">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Multi-Agent Correlation Sandbox Stage — Click button above to test trigger</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: KNOWLEDGE GRAPH & VECTOR RAG LAYER (STAGE 2 ARCHITECTURE) -->
+    <section id="sec-knowledge-rag" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="color: #a855f7; margin-right: 0.4rem;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Knowledge Graph & Vector Database RAG Layer
+          </h1>
+          <div class="section-desc">Dual knowledge representation storing entities, events, and relationships alongside high-dimensional vector embeddings for RAG retrieval.</div>
+        </div>
+        <div>
+          <span class="hud-pill" style="border-color: #a855f7; color: #c084fc;">
+            ⏳ STAGE 2 — UNDER DEVELOPMENT
+          </span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <!-- Left: Knowledge Graph Card -->
+        <div class="card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="card-title" style="color: #c084fc;">Forensic Knowledge Graph (KG)</h2>
+            <button class="btn btn-secondary btn-sm" onclick="showFutureFeatureNotice('Knowledge Graph Builder', '(Available in future — working on it)');">Build Graph</button>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">Graph database storing forensic entities (Hosts, Accounts, Processes, Files, IP addresses) and directional causal edges.</p>
+          <div style="background: rgba(168, 85, 247, 0.05); border: 1px dashed rgba(168, 85, 247, 0.3); padding: 3rem 1.5rem; text-align: center; border-radius: var(--radius-md);">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="width: 48px; height: 48px; color: #c084fc; margin-bottom: 0.5rem; opacity: 0.8;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            <div style="font-weight: 600; color: #fff; font-size: 0.9rem;">Interactive Knowledge Graph Visualizer</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;">(Available in future — working on it)</div>
+          </div>
+        </div>
+
+        <!-- Right: Vector DB & RAG Pipeline Card -->
+        <div class="card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="card-title" style="color: var(--accent-cyan);">Vector Database & RAG Pipeline</h2>
+            <button class="btn btn-secondary btn-sm" onclick="showFutureFeatureNotice('RAG Pipeline', '(Available in future — working on it)');">Run Vector RAG</button>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">Semantic vector embedding store enabling evidence-grounded Retrieval-Augmented Generation (RAG) queries.</p>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="rag-search-preview" style="font-size: 0.75rem; text-transform: uppercase; color: var(--accent-cyan);">Semantic RAG Search Test:</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" id="rag-search-preview" class="form-input" placeholder="Query RAG vector database (e.g. Find privilege escalation events)..." style="font-size: 0.82rem;">
+              <button class="btn btn-primary" onclick="showFutureFeatureNotice('Vector RAG Search', '(Available in future — working on it)');">Search</button>
+            </div>
+          </div>
+          <div style="background: rgba(6, 182, 212, 0.05); border: 1px dashed rgba(6, 182, 212, 0.3); padding: 1.5rem; border-radius: var(--radius-md); font-size: 0.8rem; color: var(--text-secondary);">
+            <strong>RAG Retrieval Pipeline Status:</strong> Embeddings indexing ready for Stage 2.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: SIS STRUCTURED INVESTIGATION STATE (STAGE 3 ARCHITECTURE) -->
+    <section id="sec-sis" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-amber); margin-right: 0.4rem;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 17 22 12"/></svg>
+            Structured Investigation State (SIS) & Investigator Review
+          </h1>
+          <div class="section-desc">Maintains normalized entities, temporal event sequences, attack hypotheses, and confidence scores with human-in-the-loop oversight.</div>
+        </div>
+        <div>
+          <span class="hud-pill" style="border-color: var(--accent-amber); color: var(--accent-amber);">
+            ⏳ STAGE 3 — UNDER DEVELOPMENT
+          </span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title">Structured Investigation State (SIS) Hypotheses Inspector</h2>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="showFutureFeatureNotice('Modify SIS State', '(Available in future — working on it)');">Modify SIS Hypotheses</button>
+            <button class="btn btn-primary btn-sm" onclick="showFutureFeatureNotice('Accept SIS State', '(Available in future — working on it)');">Accept & Proceed to Outputs</button>
+          </div>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;">Human-in-the-loop review interface allowing forensic investigators to validate, edit, or reject LLM-generated attack hypotheses.</p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;">
+          <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-card); padding: 1rem; border-radius: var(--radius-md);">
+            <h4 style="color: var(--accent-emerald-light); font-size: 0.9rem; margin-top: 0; margin-bottom: 0.5rem;">Hypothesis #1: Initial Access & Persistence</h4>
+            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Phishing email attachment executed power-shell script initiating reverse TCP shell to external C2 host.</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="badge badge-emerald">Confidence: 94.2%</span>
+              <button class="btn btn-secondary btn-sm" style="font-size: 0.75rem;" onclick="showFutureFeatureNotice('Edit Hypothesis #1', '(Available in future — working on it)');">Edit Hypothesis</button>
+            </div>
+          </div>
+
+          <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-card); padding: 1rem; border-radius: var(--radius-md);">
+            <h4 style="color: var(--accent-amber); font-size: 0.9rem; margin-top: 0; margin-bottom: 0.5rem;">Hypothesis #2: Lateral Movement & Credential Access</h4>
+            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;">LSASS memory dump performed using Mimikatz binary followed by Pass-the-Hash authentication.</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="badge badge-amber">Confidence: 81.5%</span>
+              <button class="btn btn-secondary btn-sm" style="font-size: 0.75rem;" onclick="showFutureFeatureNotice('Edit Hypothesis #2', '(Available in future — working on it)');">Edit Hypothesis</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: INVESTIGATION OUTPUTS & CHAT (STAGE 3 ARCHITECTURE) -->
+    <section id="sec-outputs" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-emerald); margin-right: 0.4rem;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Investigation Outputs & Interactive AI Chat Assistant
+          </h1>
+          <div class="section-desc">Generates attack timelines, threat attribution reports, court-ready PDF packages, and provides interactive AI chat.</div>
+        </div>
+        <div>
+          <span class="hud-pill" style="border-color: var(--accent-emerald); color: var(--accent-emerald-light);">
+            ⏳ STAGE 3 — UNDER DEVELOPMENT
+          </span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+        <!-- Card 1: Attack Timeline & Attribution -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Attack Timeline & Attribution Engine</h2>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">Reconstructs precise chronological timelines and correlates TTPs with known threat actors.</p>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="showFutureFeatureNotice('Attack Timeline Generator', '(Available in future — working on it)');">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              View Attack Timeline
+            </button>
+            <button class="btn btn-secondary" onclick="showFutureFeatureNotice('Attribution Engine', '(Available in future — working on it)');">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><polygon points="12 2 2 7 12 12 22 7 12 2"/></svg>
+              Run Threat Attribution
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 2: Court-Ready PDF Forensic Report -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title" style="color: var(--accent-emerald-light);">Court-Ready Forensic Report Exporter</h2>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">Exports structured court-admissible PDF reports complete with verified SHA-256 chain of custody logs.</p>
+          <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="showFutureFeatureNotice('Court-Ready PDF Exporter', '(Available in future — working on it)');">
+            <svg class="svg-icon" viewBox="0 0 24 24" style="margin-right: 0.35rem;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+            Export Court-Ready PDF Report
+          </button>
+        </div>
+      </div>
+
+      <!-- Card 3: Interactive Investigator Chat Assistant -->
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title">Interactive AI Investigator Chat Assistant</h2>
+          <span class="badge badge-indigo">Stage 3 AI Interface</span>
+        </div>
+        <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 1rem; min-height: 140px; max-height: 200px; overflow-y: auto; margin-bottom: 1rem; font-size: 0.85rem;">
+          <div style="margin-bottom: 0.75rem; color: var(--accent-emerald-light);">
+            <strong>HMACFR AI Assistant:</strong> Welcome Investigator! I am ready to answer queries regarding evidence artifacts, memory dumps, or network PCAP streams.
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="text" id="chat-assistant-input" class="form-input" placeholder="Ask AI assistant about evidence, hypotheses, or attack vectors..." style="font-size: 0.85rem;">
+          <button class="btn btn-primary" onclick="showFutureFeatureNotice('AI Investigator Chat Assistant', '(Available in future — working on it)');">Send Query</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Future Feature Toast Notification -->
+    <div id="future-feature-toast" style="position: fixed; top: 1.5rem; right: 1.5rem; z-index: 99999; background: rgba(15, 23, 42, 0.96); border: 1px solid var(--accent-amber); box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 1rem 1.25rem; border-radius: var(--radius-md); display: none; transform: translateY(-20px); transition: all 0.3s ease;">
+      <div style="display: flex; align-items: center; gap: 0.85rem;">
+        <div style="background: rgba(245, 158, 11, 0.15); border-radius: 50%; padding: 0.5rem; display: flex; align-items: center; justify-content: center;">
+          <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-amber);"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #fff; font-size: 0.88rem;" id="future-toast-title">Feature Under Development</div>
+          <div style="font-size: 0.78rem; color: var(--accent-amber-light); margin-top: 0.15rem;" id="future-toast-desc">(Available in future — working on it)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 7: ADMIN USER MANAGEMENT (ADMIN ROLE ONLY) -->
+    <section id="sec-admin-users" class="workspace-section">
+
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" style="color: var(--accent-emerald);" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            System User & Credential Management
+          </h1>
+          <div class="section-desc">Provision user accounts, assign system access roles, and manage credentials. Admin access strictly restricted to user management.</div>
+        </div>
+        <span class="badge badge-emerald">Admin Control Center</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 1.5rem;">
+        <!-- Left: Create User Form -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+              Create New User & Password
+            </h2>
+          </div>
+          <div id="admin-create-alert" style="display: none;"></div>
+          <form id="admin-create-user-form">
+            <div class="form-group">
+              <label class="form-label" for="admin-new-username">
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                Username *
+              </label>
+              <input type="text" id="admin-new-username" class="form-input" placeholder="e.g. investigator2" required minlength="3">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="admin-new-email">
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                Official Email *
+              </label>
+              <input type="email" id="admin-new-email" class="form-input" placeholder="e.g. user@hmacfr.org" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="admin-new-role">
+                <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                System Access Role
+              </label>
+              <select id="admin-new-role" class="form-select">
+                <option value="Investigator">Investigator (Forensic Case Operator)</option>
+                <option value="Lead_Auditor">Lead Auditor (Audit Specialist)</option>
+                <option value="Admin">System Administrator</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="admin-new-password">
+                <svg class="svg-icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Account Password *
+              </label>
+              <input type="password" id="admin-new-password" class="form-input" placeholder="Minimum 6 characters" required minlength="6">
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+              <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+              Create Account & Provision Password
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: System Registered Accounts Table -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              Registered User Accounts
+            </h2>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Official Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-table-body">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Loading user accounts...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card: Pending Case Deletion Requests awaiting Admin Approval -->
+      <div id="admin-deletion-requests-card" class="card" style="margin-top: 1.5rem;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title" style="color: var(--accent-amber);">
+            <svg class="svg-icon" viewBox="0 0 24 24"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Pending Case Deletion Requests (<span id="admin-pending-deletion-count">0</span>)
+          </h2>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="loadAdminPendingDeletionRequests()">Refresh Requests</button>
+        </div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Investigator-submitted case deletion requests. Administrators can review reasons and choose to <strong>Approve & Purge</strong> or <strong>Reject</strong>.
+        </p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Case ID</th>
+                <th>Case Name</th>
+                <th>Requested By</th>
+                <th>Deletion Reason</th>
+                <th>Status</th>
+                <th>Admin Decision</th>
+              </tr>
+            </thead>
+            <tbody id="admin-pending-deletion-table-body">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No pending case deletion requests.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- Below: Selected User Details & Assigned Cases Inspection Panel -->
+      <div id="admin-user-inspection-card" class="card" style="margin-top: 1.5rem; display: none;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title" id="admin-inspect-user-title">
+            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Selected User Inspection: <span id="inspect-username-val" style="color: var(--accent-emerald-light); font-weight: 700;">—</span>
+          </h2>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <span class="mono-text" style="font-size: 0.8rem; color: var(--text-muted);" id="inspect-user-email-val"></span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('admin-user-inspection-card').style.display='none'">Close Inspection</button>
+          </div>
+        </div>
+
+        <!-- Top Row: Role Control & Quick Password Reset -->
+        <div style="display: flex; gap: 1rem; align-items: center; background: rgba(15, 23, 42, 0.75); border: 1px solid var(--border-card); padding: 0.85rem 1.25rem; border-radius: var(--radius-md); margin-bottom: 1.25rem;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <label class="form-label" style="margin: 0; white-space: nowrap; font-weight: 600;">Change User Role:</label>
+            <select id="inspect-user-role-select" class="form-select" style="padding: 0.35rem 1.8rem 0.35rem 0.65rem; font-size: 0.8rem; min-width: 160px; border-radius: var(--radius-sm);">
+              <option value="Investigator">Investigator</option>
+              <option value="Lead_Auditor">Lead Auditor</option>
+              <option value="Admin">Admin</option>
+            </select>
+            <button type="button" id="btn-save-inspect-role" class="btn btn-primary btn-sm" style="font-size: 0.775rem; padding: 0.35rem 0.85rem;">
+              Update Role
+            </button>
+          </div>
+          <div style="border-left: 1px solid var(--border-card); height: 28px; margin: 0 0.5rem;"></div>
+          <button type="button" id="btn-reset-inspect-pass" class="btn btn-secondary btn-sm" style="font-size: 0.775rem; padding: 0.35rem 0.85rem;">
+            <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Reset Password
+          </button>
+          <button type="button" id="btn-delete-inspect-user" class="btn btn-secondary btn-sm" style="border-color: rgba(239,68,68,0.5); color: #f87171; font-size: 0.775rem; padding: 0.35rem 0.85rem;" title="Delete User Account (Requires Admin Password)">
+            <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="margin-right: 0.2rem;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete User Account
+          </button>
+        </div>
+
+
+        <!-- User's Assigned Cases List -->
+        <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary); margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+          <span style="display: flex; align-items: center; gap: 0.4rem;">
+            <svg class="svg-icon svg-icon-sm" viewBox="0 0 24 24" style="color: var(--accent-emerald);"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            User's Assigned Cases (<span id="inspect-user-cases-count">0</span>)
+          </span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Admin Privileges: Deleting a case purges all physical evidence files and database records.</span>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Case ID</th>
+                <th>Case Name</th>
+                <th>Priority</th>
+                <th>Evidence Items</th>
+                <th>Status</th>
+                <th>Actions (Delete & Purge)</th>
+              </tr>
+            </thead>
+            <tbody id="inspect-user-cases-table-body">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Select a user from the table above to view their cases.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
+
+    <!-- SECTION 8: REAL-TIME WEBSOCKET FORENSIC ANALYSIS VIEW -->
+    <section id="sec-analysis" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" style="color: var(--accent-emerald);" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Real-Time WebSocket Forensic Analysis
+          </h1>
+          <div class="section-desc">Stream live multi-agent cognitive pattern recognition with step progress and real-time remaining time countdown.</div>
+        </div>
+        <span class="hud-pill"><span style="color: var(--accent-emerald);">●</span> WebSocket Pipeline Active</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem;">
+        <!-- Left: Analysis Controls Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Initiate Case Analysis</h2>
+          </div>
+
+          <form id="start-analysis-form">
+            <div class="form-group">
+              <label class="form-label" for="analysis-case-select">Select Case to Analyze *</label>
+              <select id="analysis-case-select" class="form-select" required>
+                <option value="">-- Select Target Case --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="analysis-duration">Simulated Duration (Seconds)</label>
+              <select id="analysis-duration" class="form-select">
+                <option value="20">20 Seconds (Fast)</option>
+                <option value="30" selected>30 Seconds (Standard)</option>
+                <option value="60">60 Seconds (Deep Scan)</option>
+              </select>
+            </div>
+
+            <button type="submit" id="btn-start-analysis" class="btn btn-primary" style="width: 100%; padding: 0.75rem;">
+              <svg class="svg-icon" viewBox="0 0 24 24" style="margin-right: 0.35rem;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Start WebSocket Analysis
+            </button>
+          </form>
+
+          <!-- Remaining Time Countdown Hero Card -->
+          <div id="analysis-timer-card" style="margin-top: 1.5rem; padding: 1.2rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--accent-emerald); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; margin-bottom: 0.3rem;">Remaining Time</div>
+            <div id="analysis-countdown-hero" style="font-size: 2.2rem; font-weight: 800; color: #fff; font-family: 'JetBrains Mono', monospace;">00:00</div>
+            <div id="analysis-stage-badge" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.4rem;">Status: Idle</div>
+          </div>
+        </div>
+
+        <!-- Right: WebSocket Real-Time Terminal & Progress -->
+        <div class="card" style="display: flex; flex-direction: column;">
+          <div class="card-header" style="justify-content: space-between; align-items: center;">
+            <h2 class="card-title">Live Telemetry &amp; Log Stream</h2>
+            <span id="analysis-progress-percentage" class="mono-text" style="font-size: 1rem; color: var(--accent-emerald); font-weight: 700;">0.0%</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div style="background: rgba(255,255,255,0.06); height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 1rem;">
+            <div id="analysis-main-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981, #06b6d4); transition: width 0.3s ease;"></div>
+          </div>
+
+          <!-- Live Log Terminal Output -->
+          <div id="analysis-terminal-log" class="matrix-stream-terminal" style="flex: 1; min-height: 280px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; padding: 0.85rem; background: #04070e; border: 1px solid var(--border-card); border-radius: var(--radius-sm); overflow-y: auto;">
+            <div style="color: var(--text-muted); font-style: italic;">[WebSocket Ready] Select a case and start analysis to view real-time forensic logs...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- SECTION 9: INVESTIGATOR PROFILE & MY CASES VIEW -->
+    <section id="sec-profile" class="workspace-section">
+      <div class="page-header-block">
+        <div>
+          <h1 class="page-title">
+            <svg class="svg-icon" style="color: var(--accent-emerald);" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Investigator Profile &amp; Case History
+          </h1>
+          <div class="section-desc">Personal investigator credentials, security access clearance, and complete case history (`my cases`).</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 2.2fr; gap: 1.5rem;">
+        <!-- Left: Profile Summary Card -->
+        <div class="card">
+          <div style="text-align: center; padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border-card); margin-bottom: 1.25rem;">
+            <div style="width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-emerald), var(--accent-teal)); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; box-shadow: var(--shadow-glow);">
+              <svg class="svg-icon" style="width: 36px; height: 36px; color: #fff;" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <h2 id="profile-full-name" style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem;">Investigator</h2>
+            <span id="profile-role-tag" class="badge badge-emerald" style="font-size: 0.75rem;">Investigator Role</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.88rem;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-card); padding-bottom: 0.4rem;">
+              <span style="color: var(--text-secondary);">Account Email:</span>
+              <span id="profile-email-val" class="mono-text" style="color: #fff;">investigator@hmacfr.org</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-card); padding-bottom: 0.4rem;">
+              <span style="color: var(--text-secondary);">Clearance Layer:</span>
+              <span style="color: var(--accent-emerald); font-weight: 600;">Layer 1 (Restricted Vault)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-card); padding-bottom: 0.4rem;">
+              <span style="color: var(--text-secondary);">Auth Method:</span>
+              <span class="mono-text" style="color: #fff;">AES-256 JWT Token</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-secondary);">Assigned Cases:</span>
+              <span id="profile-cases-count" style="color: var(--accent-emerald); font-weight: 700;">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: My Cases / Case History Table -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg class="svg-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              My Cases &amp; Case History
+            </h2>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Case ID</th>
+                  <th>Case Title</th>
+                  <th>Priority</th>
+                  <th>Evidence Items</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="my-cases-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading your case history...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+  </main>
+
+  <!-- ==================== CREATE CASE MODAL OVERLAY ==================== -->
+  <div id="create-case-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(8, 12, 20, 0.85); backdrop-filter: blur(12px); z-index: 1000; justify-content: center; align-items: center; padding: 1.5rem;">
+    <div class="card" style="width: 100%; max-width: 520px; box-shadow: var(--shadow-lg); border-color: rgba(16, 185, 129, 0.4);">
+      <div class="card-header" style="justify-content: space-between; align-items: center;">
+        <h2 class="card-title" style="font-size: 1.15rem;">
+          <svg class="svg-icon" viewBox="0 0 24 24" style="color: var(--accent-emerald);"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Create New Investigation Case
+        </h2>
+        <button type="button" id="btn-close-create-modal" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+
+      <form id="modal-create-case-form">
+        <div class="form-group">
+          <label class="form-label" for="modal-case-name">Case Title / Reference *</label>
+          <input type="text" id="modal-case-name" class="form-input" placeholder="e.g. Memory Leak Incident 2026" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modal-case-investigator">Lead Investigator *</label>
+          <input type="text" id="modal-case-investigator" class="form-input investigator-autofill" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="modal-case-priority">Priority Level</label>
+            <select id="modal-case-priority" class="form-select">
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="modal-case-expected-count">Expected Evidence Items</label>
+            <div class="custom-number-stepper">
+              <button type="button" class="stepper-btn" onclick="window.adjustStepper('modal-case-expected-count', -1)">−</button>
+              <input type="number" id="modal-case-expected-count" class="stepper-input" min="1" max="50" value="2" readonly>
+              <button type="button" class="stepper-btn" onclick="window.adjustStepper('modal-case-expected-count', 1)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modal-case-desc">Case Description Scope</label>
+          <textarea id="modal-case-desc" class="form-textarea" rows="2" placeholder="Scope of cyber incident and digital forensics investigation..."></textarea>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1rem;">
+          <button type="button" id="btn-cancel-create-modal" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create &amp; Initialize Case</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ==================== ENTERPRISE LOADING HUD MODAL ==================== -->
+  <div id="cyber-loading-modal">
+    <div class="loading-hud-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.65rem;">
+        <span style="font-size: 0.75rem; color: #1d4ed8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-family: 'JetBrains Mono', monospace;">FORENSIC TELEMETRY ENGINE</span>
+        <span style="font-size: 0.85rem; color: #059669; font-weight: 800; font-family: 'JetBrains Mono', monospace;" id="loading-percentage">0%</span>
+      </div>
+
+      <div class="radium-spinner-viewport" style="display: none;">
+        <canvas id="loading-radium-canvas"></canvas>
+      </div>
+
+      <h3 id="loading-title" style="font-size: 1.2rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; margin-bottom: 0.35rem;">Processing Cryptographic Telemetry...</h3>
+      <p id="loading-subtitle" style="font-size: 0.88rem; color: #64748b; margin-bottom: 1rem;">Calculating SHA-256 digests and applying AES-256-GCM encryption layers.</p>
+
+      <!-- Animated Progress Bar -->
+      <div class="loading-progress-container">
+        <div id="loading-progress-bar" class="loading-progress-bar"></div>
+      </div>
+
+      <!-- Real-Time Stream Terminal -->
+      <div id="loading-matrix-terminal" class="matrix-stream-terminal">
+        <div class="matrix-stream-line" style="display: flex; gap: 0.5rem;">
+          <span class="matrix-stream-timestamp" style="color: #2563eb; font-weight: 700;">[0.000s]</span>
+          <span style="color: #334155; font-weight: 600;">INITIALIZING FORENSIC PRESERVATION CORE...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== SHERLOCK AI CUSTOM FORENSIC NOTIFICATION MODAL ==================== -->
+  <div id="sherlock-custom-notice-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10000; align-items: center; justify-content: center; padding: 1rem;">
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; width: 100%; max-width: 440px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25); text-align: center; position: relative; animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div id="sherlock-notice-icon-box" style="width: 56px; height: 56px; border-radius: 50%; background: #eff6ff; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.1rem auto;">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <h3 id="sherlock-notice-title" style="font-size: 1.25rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; margin-bottom: 0.5rem;">Forensic Notification</h3>
+      <p id="sherlock-notice-message" style="font-size: 0.9rem; color: #475569; line-height: 1.5; margin-bottom: 1.5rem;">Action executed successfully.</p>
+      <button type="button" onclick="closeSherlockNoticeModal();" style="width: 100%; background: #1d4ed8; color: #ffffff; border: none; padding: 0.8rem 1.5rem; font-size: 0.95rem; font-weight: 700; border-radius: 10px; cursor: pointer; transition: background 0.15s ease;">
+        Acknowledge
+      </button>
+    </div>
+
+  <!-- Sherlock Custom Input Prompt Modal HUD (Zero Browser Native Popups) -->
+  <div id="sherlock-custom-prompt-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10000; align-items: center; justify-content: center; padding: 1rem;">
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; width: 100%; max-width: 440px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25); position: relative; animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div style="width: 50px; height: 50px; border-radius: 50%; background: #fef2f2; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#dc2626" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </div>
+      <h3 id="sherlock-prompt-title" style="font-size: 1.15rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; text-align: center; margin-bottom: 0.4rem;">Submit Case Deletion Request</h3>
+      <p id="sherlock-prompt-message" style="font-size: 0.85rem; color: #475569; line-height: 1.45; text-align: center; margin-bottom: 1.25rem;">Standard Investigators must provide a deletion reason for the Administrator.</p>
+      
+      <div style="margin-bottom: 1.25rem;">
+        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 0.35rem;">REASON / REMARKS</label>
+        <input type="text" id="sherlock-prompt-input" placeholder="Enter reason for deletion..." style="width: 100%; padding: 0.65rem 0.85rem; font-size: 0.88rem; border: 1.5px solid #cbd5e1; border-radius: 8px; outline: none; box-sizing: border-box; font-family: inherit;">
+      </div>
+
+      <div style="display: flex; gap: 0.75rem;">
+        <button type="button" onclick="closeSherlockPromptModal(false);" style="flex: 1; background: #f1f5f9; color: #475569; border: none; padding: 0.7rem; font-size: 0.88rem; font-weight: 700; border-radius: 8px; cursor: pointer;">Cancel</button>
+        <button type="button" id="sherlock-prompt-submit-btn" onclick="submitSherlockPromptModal();" style="flex: 1; background: #dc2626; color: #ffffff; border: none; padding: 0.7rem; font-size: 0.88rem; font-weight: 700; border-radius: 8px; cursor: pointer;">Submit Request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clean Minimalist Case Deletion Confirmation Modal -->
+  <div id="delete-case-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 999999; align-items: center; justify-content: center;">
+    <div style="background: #ffffff; border-radius: 16px; width: 430px; max-width: 90vw; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid #e2e8f0; font-family: 'Plus Jakarta Sans', sans-serif;">
+      <div style="width: 50px; height: 50px; border-radius: 50%; background: #fef2f2; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#dc2626" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </div>
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; font-family: 'Outfit', sans-serif; text-align: center; margin-bottom: 0.4rem;">Delete Investigation Case</h3>
+      <p id="delete-case-modal-msg" style="font-size: 0.85rem; color: #475569; line-height: 1.5; text-align: center; margin-bottom: 1.5rem;">Are you sure you want to permanently delete this case? All physical evidence files and audit records will be scrubbed from disk.</p>
+      
+      <div style="display: flex; gap: 0.75rem;">
+        <button type="button" onclick="closeDeleteCaseModal();" style="flex: 1; background: #f1f5f9; color: #475569; border: none; padding: 0.7rem; font-size: 0.88rem; font-weight: 700; border-radius: 8px; cursor: pointer; transition: background 0.15s ease;">Cancel</button>
+        <button type="button" onclick="confirmAndExecuteDelete();" style="flex: 1; background: #dc2626; color: #ffffff; border: none; padding: 0.7rem; font-size: 0.88rem; font-weight: 700; border-radius: 8px; cursor: pointer; transition: background 0.15s ease;">Delete Case</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Floating Popover Menu Attached to Body (Guaranteed 100% Unclipped) -->
+  <div id="global-case-card-popover" style="display: none; position: fixed; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.15); width: 210px; z-index: 99999; overflow: hidden; padding: 0.4rem 0; transition: opacity 0.15s ease;">
+    <div style="padding: 0.35rem 1rem 0.25rem 1rem; font-size: 0.68rem; font-weight: 800; color: #94a3b8; letter-spacing: 0.08em;">CHANGE PRIORITY</div>
+    <div onclick="updateGlobalCasePriority('Critical');" style="padding: 0.45rem 1rem; font-size: 0.8rem; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <span style="color: #dc2626; font-size: 0.65rem;">●</span>
+      <span>Critical Priority</span>
+    </div>
+    <div onclick="updateGlobalCasePriority('High');" style="padding: 0.45rem 1rem; font-size: 0.8rem; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <span style="color: #ea580c; font-size: 0.65rem;">●</span>
+      <span>High Priority</span>
+    </div>
+    <div onclick="updateGlobalCasePriority('Medium');" style="padding: 0.45rem 1rem; font-size: 0.8rem; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <span style="color: #1d4ed8; font-size: 0.65rem;">●</span>
+      <span>Medium Priority</span>
+    </div>
+    <div onclick="updateGlobalCasePriority('Low');" style="padding: 0.45rem 1rem; font-size: 0.8rem; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <span style="color: #64748b; font-size: 0.65rem;">●</span>
+      <span>Low Priority</span>
+    </div>
+
+    <div style="height: 1px; background: #f1f5f9; margin: 0.35rem 0;"></div>
+
+    <div onclick="openGlobalCaseInspect();" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4ed8" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Inspect Details</span>
+    </div>
+    <div onclick="deleteCaseItem(window.g_currentActiveCaseId, window.g_currentActiveCaseName, event);" style="padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; color: #dc2626; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: background 0.15s;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#dc2626" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      <span>Delete Case</span>
+    </div>
+  </div>
+
+  <script src="js/tilt-effects.js?v=115.0"></script>
+  <script src="js/api.js?v=115.0"></script>
+  <script src="js/app.js?v=115.0"></script>
+
+</body>
+</html>
