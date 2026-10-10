@@ -6,3 +6,19 @@ sqlalchemy>=2.0.0
 python-multipart>=0.0.6
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+
+# Disk & File System Analysis
+pytsk3>=4.0.0
+
+# Artifact Parsers (Registry, Event Logs, LNK, Prefetch, Jump Lists, Email)
+regipy>=3.0.0
+python-evtx>=0.7.4
+olefile>=0.46
+
+# PCAP & Network Analysis
+scapy>=2.5.0
+requests>=2.31.0
+
+# HTML, XML & Image Processing
+beautifulsoup4>=4.12.0
+Pillow>=10.0.0

@@ -1,0 +1,14 @@
+{
+    "disk": true,
+    "memory": true,
+    "pcap": true,
+    "browser": true,
+    "email": true,
+    "registry": true,
+    "eventlog": true,
+    "jumplist": true,
+    "lnk": true,
+    "mft": true,
+    "prefetch": true,
+    "recyclebin": true
+}

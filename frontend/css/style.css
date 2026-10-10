@@ -4547,3 +4547,354 @@ body.sidebar-collapsed .btn-signout-minimalist {
   background: #f1f5f9 !important;
   color: #1d4ed8 !important;
 }
+
+/* ==========================================================================
+   STAGE 1: FORENSIC WORKFLOW & CASE-CENTRIC UX STYLES
+   ========================================================================== */
+
+/* Sidebar Navigation Group Labels */
+.sidebar-nav-group-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  padding: 0.6rem 1.1rem 0.3rem;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* Active Case Context Header Bar */
+.active-case-context-bar {
+  background: #ffffff;
+  border-bottom: 1.5px solid #e2e8f0;
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  transition: all 0.25s ease;
+}
+
+.case-context-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 260px;
+}
+
+.case-context-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.case-context-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.case-context-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #10b981;
+  text-transform: uppercase;
+}
+
+.case-context-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.case-context-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  font-family: 'Outfit', sans-serif;
+  white-space: nowrap;
+}
+
+.case-context-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+}
+
+.case-context-priority {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.case-context-priority.priority-critical {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+.case-context-priority.priority-high {
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #fed7aa;
+}
+.case-context-priority.priority-medium {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.case-context-priority.priority-low {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.case-context-meta {
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* Progressive Investigation Stepper inside Context Bar */
+.case-context-center {
+  flex: 1;
+  max-width: 600px;
+}
+
+.case-context-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  width: 100%;
+}
+
+.stepper-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.stepper-step .step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.stepper-step .step-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.stepper-step:hover .step-num {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
+.stepper-step:hover .step-label {
+  color: #1d4ed8;
+}
+
+.stepper-step.completed .step-num {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.stepper-step.completed .step-label {
+  color: #0f172a;
+}
+
+.stepper-step.active .step-num {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
+}
+
+.stepper-step.active .step-label {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.stepper-divider {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.stepper-divider.completed {
+  background: #10b981;
+}
+
+.case-context-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Artifact Extraction Workspace Styles */
+.extraction-workspace-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.artifact-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.artifact-tree-node {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.artifact-tree-node:hover {
+  border-color: #bfdbfe;
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.artifact-tree-node.active {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.artifact-node-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.artifact-node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1d4ed8;
+}
+
+.artifact-node-info h4 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.artifact-node-info span {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.artifact-node-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.artifact-tree-node.active .artifact-node-badge {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+/* Case Evidence Readiness Bar */
+.case-readiness-banner {
+  background: linear-gradient(90deg, #eff6ff, #f8fafc);
+  border: 1.5px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.case-readiness-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.case-readiness-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Responsive Rules for Small Screens / Zoom */
+@media (max-width: 1200px) {
+  .case-context-stepper {
+    display: none;
+  }
+  .extraction-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}

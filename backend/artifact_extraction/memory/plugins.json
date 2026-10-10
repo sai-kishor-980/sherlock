@@ -1,0 +1,40 @@
+{
+    "memory_plugins": {
+        "system": [
+            "windows.info"
+        ],
+        "processes": [
+            "windows.pslist",
+            "windows.psscan",
+            "windows.pstree"
+        ],
+        "execution": [
+            "windows.cmdline"
+        ],
+        "network": [],
+        "modules": [
+            "windows.dlllist",
+            "windows.modules",
+            "windows.modscan"
+        ],
+        "memory_analysis": [
+            "windows.vadinfo"
+        ],
+        "users_security": [
+            "windows.sessions",
+            "windows.getsids",
+            "windows.privileges"
+        ],
+        "services_persistence": [
+            "windows.svcscan",
+            "windows.scheduled_tasks"
+        ],
+        "threat_hunting": [
+            "windows.malfind"
+        ],
+        "handles": [
+            "windows.handles",
+            "windows.filescan"
+        ]
+    }
+}

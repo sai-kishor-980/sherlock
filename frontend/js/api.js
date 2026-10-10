@@ -398,6 +398,46 @@ const HMACFR_API = {
     };
 
     return ws;
+  },
+
+  async getForensicData(caseId) {
+    const res = await fetch(`${API_BASE_URL}/analysis/${encodeURIComponent(caseId)}/data`, {
+      headers: this.getHeaders()
+    });
+    if (!res.ok) throw new Error("Failed to fetch synthesized forensic data");
+    return res.json();
+  },
+
+  async getArtifacts(caseId) {
+    const res = await fetch(`${API_BASE_URL}/analysis/${encodeURIComponent(caseId)}/artifacts`, {
+      headers: this.getHeaders()
+    });
+    if (!res.ok) throw new Error("Failed to fetch forensic artifacts");
+    return res.json();
+  },
+
+  async getTimeline(caseId) {
+    const res = await fetch(`${API_BASE_URL}/analysis/${encodeURIComponent(caseId)}/timeline`, {
+      headers: this.getHeaders()
+    });
+    if (!res.ok) throw new Error("Failed to fetch attack timeline");
+    return res.json();
+  },
+
+  async getFindings(caseId) {
+    const res = await fetch(`${API_BASE_URL}/analysis/${encodeURIComponent(caseId)}/findings`, {
+      headers: this.getHeaders()
+    });
+    if (!res.ok) throw new Error("Failed to fetch key findings");
+    return res.json();
+  },
+
+  async getReport(caseId) {
+    const res = await fetch(`${API_BASE_URL}/analysis/${encodeURIComponent(caseId)}/report`, {
+      headers: this.getHeaders()
+    });
+    if (!res.ok) throw new Error("Failed to fetch court report");
+    return res.json();
   }
 };
 

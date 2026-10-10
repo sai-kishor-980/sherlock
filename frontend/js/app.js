@@ -34,13 +34,9 @@ window.switchWorkspaceSection = function(targetId) {
     }
   });
 
-  // Sync top subnav active underline tab
-  if (window.syncTopSubnavTab) {
-    if (targetId === "sec-create-case") {
-      window.syncTopSubnavTab("sec-cases");
-    } else {
-      window.syncTopSubnavTab(targetId);
-    }
+  // Update active case context bar visibility on section switch
+  if (typeof window.updateActiveCaseContextBar === "function") {
+    window.updateActiveCaseContextBar(window.g_currentActiveCase);
   }
 
   // Load section-specific data
@@ -50,16 +46,761 @@ window.switchWorkspaceSection = function(targetId) {
     if (typeof window.loadCasesSection === "function") window.loadCasesSection();
   } else if (targetId === "sec-evidence-vault") {
     if (typeof loadEvidenceVaultSection === "function") loadEvidenceVaultSection();
+  } else if (targetId === "sec-extraction") {
+    if (typeof window.loadExtractionSection === "function") window.loadExtractionSection();
   } else if (targetId === "sec-preservation") {
     if (typeof loadPreservationSection === "function") loadPreservationSection();
   } else if (targetId === "sec-custody") {
     if (typeof populateCustodyEvidenceSelects === "function") populateCustodyEvidenceSelects();
   } else if (targetId === "sec-analysis") {
-    if (typeof loadAnalysisSection === "function") loadAnalysisSection();
+    if (typeof window.loadAnalysisSection === "function") window.loadAnalysisSection();
+  } else if (targetId === "sec-sis") {
+    if (typeof window.loadSisSection === "function") window.loadSisSection();
+  } else if (targetId === "sec-outputs") {
+    if (typeof window.loadOutputsSection === "function") window.loadOutputsSection();
   } else if (targetId === "sec-profile") {
     if (typeof loadProfileSection === "function") loadProfileSection();
   } else if (targetId === "sec-admin-users") {
     if (typeof loadAdminUsersData === "function") loadAdminUsersData();
+  }
+
+  // Synchronize case context bar & stepper
+  if (typeof window.syncCaseContextStepper === "function") {
+    window.syncCaseContextStepper(targetId);
+  }
+};
+
+window.switchNav = window.switchWorkspaceSection;
+
+// Canonical Global Active Case Context (Stage 1.2 Unified State)
+window.g_currentActiveCase = null;
+window.g_currentActiveCaseId = null;
+window.g_currentActiveCaseName = null;
+window.g_currentActiveCaseObj = null;
+
+// Sets or clears the canonical active case and synchronizes all workspace views
+window.setActiveCase = async function(caseId, options = {}) {
+  if (!caseId) {
+    window.g_currentActiveCase = null;
+    window.g_currentActiveCaseId = null;
+    window.g_currentActiveCaseName = null;
+    window.g_currentActiveCaseObj = null;
+    window.currentForensicData = null;
+
+    if (window.clearForensicOutputs) window.clearForensicOutputs();
+    window.updateActiveCaseContextBar(null);
+
+    // Synchronize open dropdowns
+    ["vault-repo-case-select", "extraction-case-select", "analysis-case-select"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    if (options.refreshActiveSection !== false) {
+      refreshCurrentSectionData();
+    }
+    return null;
+  }
+
+  // Find or fetch case record
+  let c = (window.g_allCases || []).find(x => x.case_id === caseId);
+  if (!c) {
+    try {
+      const cases = await HMACFR_API.getCases();
+      window.g_allCases = cases;
+      c = cases.find(x => x.case_id === caseId);
+    } catch (e) {
+      console.error("Could not fetch case list:", e);
+    }
+  }
+
+  if (!c) {
+    c = { case_id: caseId, case_name: caseId, priority: "Medium", status: "Active" };
+  }
+
+  // Fetch actual evidence items for this case
+  let evidences = [];
+  try {
+    evidences = await HMACFR_API.getAllEvidence(caseId);
+    if (!Array.isArray(evidences)) evidences = [];
+  } catch (e) {
+    console.warn("Could not fetch evidence for case:", e);
+    evidences = [];
+  }
+
+  // Fetch synthesized data for this case
+  let synthData = null;
+  try {
+    synthData = await HMACFR_API.getForensicData(caseId);
+  } catch (e) {
+    synthData = null;
+  }
+
+  // Clear previous case outputs before setting new state
+  if (window.clearForensicOutputs) window.clearForensicOutputs();
+
+  window.g_currentActiveCaseId = c.case_id;
+  window.g_currentActiveCaseName = c.case_name || c.case_id;
+  window.g_currentActiveCaseObj = c;
+  window.currentForensicData = synthData;
+
+  const evCount = evidences.length;
+  const evIds = evidences.map(e => e.evidence_id || e.id);
+
+  // Compute canonical stage
+  const inv = synthData && synthData.artifact_inventory ? synthData.artifact_inventory : null;
+  const totalArtifacts = inv ? (inv.total_artifacts || 0) : 0;
+  const findingsCount = synthData && synthData.findings ? synthData.findings.length : 0;
+
+  let currentStage = "Evidence Acquisition";
+  let stageNum = 2;
+
+  if (findingsCount > 0 || (synthData && synthData.timeline && synthData.timeline.length > 0)) {
+    currentStage = "Outputs & Report Ready";
+    stageNum = 6;
+  } else if (totalArtifacts > 0) {
+    currentStage = "Ready for Investigation";
+    stageNum = 4;
+  } else if (evCount > 0) {
+    currentStage = "Ready for Extraction";
+    stageNum = 3;
+  } else {
+    currentStage = "Awaiting Evidence";
+    stageNum = 2;
+  }
+
+  window.g_currentActiveCase = {
+    case_id: c.case_id,
+    case_name: c.case_name || c.case_id,
+    priority: c.priority || "Medium",
+    investigator: c.investigator_name || c.assigned_investigator || c.created_by || "Lead Investigator",
+    case_status: c.status || "Active",
+    current_stage: currentStage,
+    stage_num: stageNum,
+    evidence_count: evCount,
+    evidence_ids: evIds,
+    evidences: evidences,
+    synthesized_data: synthData
+  };
+
+  // Synchronize case context bar
+  window.updateActiveCaseContextBar(window.g_currentActiveCase);
+
+  // Synchronize dropdowns across sections
+  ["vault-repo-case-select", "extraction-case-select", "analysis-case-select"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.value !== c.case_id) el.value = c.case_id;
+  });
+
+  if (options.refreshActiveSection !== false) {
+    refreshCurrentSectionData();
+  }
+
+  return window.g_currentActiveCase;
+};
+
+// Refreshes the currently active workspace section with the active case data
+function refreshCurrentSectionData() {
+  const currentSection = document.querySelector(".workspace-section.active");
+  const currentId = currentSection ? currentSection.id : "";
+
+  if (currentId === "sec-evidence-vault") {
+    if (typeof loadEvidenceVaultSection === "function") loadEvidenceVaultSection();
+  } else if (currentId === "sec-extraction") {
+    if (typeof window.loadExtractionSection === "function") window.loadExtractionSection();
+  } else if (currentId === "sec-analysis") {
+    if (typeof window.loadAnalysisSection === "function") window.loadAnalysisSection();
+  } else if (currentId === "sec-sis") {
+    if (typeof window.loadSisSection === "function") window.loadSisSection();
+  } else if (currentId === "sec-outputs") {
+    if (typeof window.loadOutputsSection === "function") window.loadOutputsSection();
+  }
+}
+
+// Case Card Open Handler: Activates canonical case and enters the investigation workflow
+window.openCaseDetails = async function(caseId) {
+  if (!caseId) return;
+
+  await window.setActiveCase(caseId, { refreshActiveSection: false });
+
+  // If in dashboard, switch to Evidence Vault; otherwise stay and refresh current section
+  const currentSection = document.querySelector(".workspace-section.active");
+  const currentId = currentSection ? currentSection.id : "";
+
+  if (!currentId || currentId === "sec-cases" || currentId === "sec-home") {
+    window.switchWorkspaceSection("sec-evidence-vault");
+  } else {
+    refreshCurrentSectionData();
+    window.syncCaseContextStepper(currentId);
+  }
+};
+
+// Updates the compact Selected Case Context Header
+window.updateActiveCaseContextBar = function(caseObj) {
+  const bar = document.getElementById("active-case-context-bar");
+  if (!bar) return;
+
+  const selectedView = document.getElementById("case-context-selected-view");
+  const unselectedView = document.getElementById("case-context-unselected-view");
+
+  const currentSection = document.querySelector(".workspace-section.active");
+  const currentSecId = currentSection ? currentSection.id : "";
+
+  if (!caseObj || !caseObj.case_id) {
+    // If browsing Home, Cases, or Create Case without an active case, hide bar completely to avoid clutter
+    if (!currentSecId || currentSecId === "sec-home" || currentSecId === "sec-cases" || currentSecId === "sec-create-case") {
+      bar.style.setProperty("display", "none", "important");
+      return;
+    }
+    bar.style.setProperty("display", "flex", "important");
+    if (selectedView) selectedView.style.setProperty("display", "none", "important");
+    if (unselectedView) unselectedView.style.setProperty("display", "flex", "important");
+    return;
+  }
+
+  bar.style.setProperty("display", "flex", "important");
+  if (unselectedView) unselectedView.style.setProperty("display", "none", "important");
+  if (selectedView) selectedView.style.setProperty("display", "flex", "important");
+
+  const caseId = caseObj.case_id;
+  const caseName = caseObj.case_name || caseId;
+  const priority = (caseObj.priority || "Medium").toUpperCase();
+  const lead = caseObj.investigator || "Lead Investigator";
+  const count = caseObj.evidence_count !== undefined ? caseObj.evidence_count : (caseObj.evidences ? caseObj.evidences.length : 0);
+  const stage = caseObj.current_stage || "Active Investigation";
+
+  // Standardized IDs
+  const titleEl = document.getElementById("ctx-case-title");
+  if (titleEl) titleEl.textContent = caseName;
+
+  const idEl = document.getElementById("ctx-case-id");
+  if (idEl) idEl.textContent = caseId.length > 16 ? `${caseId.substring(0, 10)}...` : caseId;
+
+  const priorityEl = document.getElementById("ctx-case-priority");
+  if (priorityEl) {
+    priorityEl.textContent = priority;
+    priorityEl.className = "case-context-priority " + (
+      priority === "CRITICAL" ? "priority-critical" :
+      priority === "HIGH" ? "priority-high" :
+      priority === "LOW" ? "priority-low" : "priority-medium"
+    );
+  }
+
+  const leadEl = document.getElementById("ctx-case-investigator");
+  if (leadEl) leadEl.textContent = lead;
+
+  const countEl = document.getElementById("ctx-case-evidence-count");
+  if (countEl) countEl.textContent = `${count} Evidence Item${count === 1 ? '' : 's'}`;
+
+  const statusEl = document.getElementById("ctx-case-status");
+  if (statusEl) statusEl.textContent = stage;
+
+  // Fallback IDs if present
+  const nameOld = document.getElementById("active-case-name");
+  if (nameOld) nameOld.textContent = caseName;
+  const idOld = document.getElementById("active-case-id");
+  if (idOld) idOld.textContent = caseId;
+  const leadOld = document.getElementById("active-case-lead");
+  if (leadOld) leadOld.textContent = lead;
+
+  // Update section banners
+  const vaultNameEl = document.getElementById("vault-case-display-name");
+  if (vaultNameEl) vaultNameEl.textContent = `${caseName} (${caseId})`;
+
+  const outNameEl = document.getElementById("outputs-case-display-name");
+  if (outNameEl) outNameEl.textContent = `${caseName} (${caseId})`;
+
+  const sisNameEl = document.getElementById("sis-case-name");
+  if (sisNameEl) sisNameEl.textContent = `${caseName} (${caseId})`;
+
+  window.syncCaseContextStepper();
+};
+
+// Synchronizes the 6-step workflow stepper and Next Action button
+window.syncCaseContextStepper = function(targetSectionId) {
+  const currentSection = targetSectionId || (document.querySelector(".workspace-section.active") ? document.querySelector(".workspace-section.active").id : "sec-cases");
+
+  const stepMap = {
+    "sec-cases": "step-nav-case",
+    "sec-create-case": "step-nav-case",
+    "sec-evidence-vault": "step-nav-evidence",
+    "sec-preservation": "step-nav-evidence",
+    "sec-custody": "step-nav-evidence",
+    "sec-extraction": "step-nav-extraction",
+    "sec-analysis": "step-nav-investigation",
+    "sec-sis": "step-nav-sis",
+    "sec-outputs": "step-nav-outputs"
+  };
+
+  const steps = ["step-nav-case", "step-nav-evidence", "step-nav-extraction", "step-nav-investigation", "step-nav-sis", "step-nav-outputs"];
+  const activeStepId = stepMap[currentSection] || "step-nav-case";
+  const activeIdx = steps.indexOf(activeStepId);
+
+  steps.forEach((sId, idx) => {
+    const el = document.getElementById(sId);
+    if (!el) return;
+    if (idx < activeIdx) {
+      el.classList.add("completed");
+      el.classList.remove("active");
+    } else if (idx === activeIdx) {
+      el.classList.add("active");
+      el.classList.remove("completed");
+    } else {
+      el.classList.remove("active");
+      el.classList.remove("completed");
+    }
+  });
+
+  // Update Next Action Button
+  const btn = document.getElementById("ctx-next-action-btn");
+  if (!btn) return;
+
+  if (currentSection === "sec-cases" || currentSection === "sec-home") {
+    btn.innerHTML = `<span>Manage Evidence Vault</span> <span>&rarr;</span>`;
+  } else if (currentSection === "sec-evidence-vault" || currentSection === "sec-preservation" || currentSection === "sec-custody") {
+    btn.innerHTML = `<span>Continue to Extraction</span> <span>&rarr;</span>`;
+  } else if (currentSection === "sec-extraction") {
+    btn.innerHTML = `<span>Proceed to Investigation</span> <span>&rarr;</span>`;
+  } else if (currentSection === "sec-analysis") {
+    btn.innerHTML = `<span>Review SIS Findings</span> <span>&rarr;</span>`;
+  } else if (currentSection === "sec-sis") {
+    btn.innerHTML = `<span>Outputs &amp; Report</span> <span>&rarr;</span>`;
+  } else if (currentSection === "sec-outputs") {
+    btn.innerHTML = `<span>Back to Cases</span> <span>&rarr;</span>`;
+  }
+};
+
+// Handles clicking the Next Action button in the case context bar
+window.handleContextNextAction = function() {
+  const currentSection = document.querySelector(".workspace-section.active");
+  const currentId = currentSection ? currentSection.id : "sec-cases";
+
+  if (currentId === "sec-cases" || currentId === "sec-home" || currentId === "sec-create-case") {
+    window.switchWorkspaceSection("sec-evidence-vault");
+  } else if (currentId === "sec-evidence-vault" || currentId === "sec-preservation" || currentId === "sec-custody") {
+    window.switchWorkspaceSection("sec-extraction");
+  } else if (currentId === "sec-extraction") {
+    window.switchWorkspaceSection("sec-analysis");
+  } else if (currentId === "sec-analysis") {
+    window.switchWorkspaceSection("sec-sis");
+  } else if (currentId === "sec-sis") {
+    window.switchWorkspaceSection("sec-outputs");
+  } else if (currentId === "sec-outputs") {
+    window.switchWorkspaceSection("sec-cases");
+  } else {
+    window.switchWorkspaceSection("sec-cases");
+  }
+};
+
+// Case-Specific Forensic File Manager / Artifact Browser Renderer (Stage 1.2 Hierarchy)
+function renderArtifactBrowser(caseObj, synthData) {
+  const treeContainer = document.getElementById("extraction-artifact-tree-list");
+  if (!treeContainer) return;
+
+  const evidences = caseObj ? (caseObj.evidences || []) : [];
+  const inv = synthData && synthData.artifact_inventory ? synthData.artifact_inventory : null;
+  const totalArtifacts = inv ? (inv.total_artifacts || 0) : 0;
+
+  if (totalArtifacts === 0) {
+    treeContainer.innerHTML = `
+      <div id="extraction-empty-state" class="empty-state" style="padding: 2.5rem 1rem; text-align: center;">
+        <div style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">No Artifacts Extracted Yet</div>
+        <div style="font-size: 0.82rem; color: #64748b; max-width: 480px; margin: 0 auto 1.25rem;">
+          Preserved evidence files are verified. Click 'Start Extraction' above to execute adapters and parse raw evidence into structured forensic artifacts.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Build categories only for records that actually exist
+  const categories = [];
+  const memTotal = (inv.memory_processes_count || 0) + (inv.injections_count || 0);
+  if (memTotal > 0) {
+    const subitems = [];
+    if (inv.memory_processes_count > 0) subitems.push(`${inv.memory_processes_count} Process Trees & VAD Nodes`);
+    if (inv.injections_count > 0) subitems.push(`${inv.injections_count} Memory Injections (Malfind)`);
+    categories.push({ name: "Memory", count: memTotal, tag: "RAM", items: subitems });
+  }
+
+  const diskTotal = (inv.persistence_count || 0) + (inv.prefetch_count || 0);
+  if (diskTotal > 0) {
+    const subitems = [];
+    if (inv.persistence_count > 0) subitems.push(`${inv.persistence_count} Persistence Registry Run Keys`);
+    if (inv.prefetch_count > 0) subitems.push(`${inv.prefetch_count} Execution Prefetch Records`);
+    categories.push({ name: "Disk / Filesystem", count: diskTotal, tag: "DISK", items: subitems });
+  }
+
+  if (inv.usb_devices_count > 0) {
+    categories.push({ name: "Hardware & USB", count: inv.usb_devices_count, tag: "USB", items: [`${inv.usb_devices_count} Mounted USB Registry Signatures`] });
+  }
+
+  if (inv.network_artifacts_count > 0) {
+    categories.push({ name: "Network", count: inv.network_artifacts_count, tag: "NET", items: [`${inv.network_artifacts_count} PCAP Packet Streams & DNS Records`] });
+  }
+
+  if (inv.browser_records_count > 0) {
+    categories.push({ name: "Browser", count: inv.browser_records_count, tag: "WEB", items: [`${inv.browser_records_count} History & Download Records`] });
+  }
+
+  let categoriesHTML = "";
+  if (categories.length === 0) {
+    categoriesHTML = `
+      <div style="padding: 1rem; color: #64748b; font-size: 0.8rem; font-style: italic;">
+        No categorized artifacts found for this case.
+      </div>
+    `;
+  } else {
+    categoriesHTML = categories.map(cat => `
+      <div style="margin-bottom: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #ffffff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 0.85rem; background: #f8fafc; border-bottom: 1px solid #f1f5f9;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(29, 78, 216, 0.08); color: #1d4ed8;">${cat.tag}</span>
+            <span style="font-weight: 700; font-size: 0.84rem; color: #0f172a;">${cat.name}</span>
+          </div>
+          <span class="badge badge-indigo" style="font-size: 0.72rem;">${cat.count} records</span>
+        </div>
+        <div style="padding: 0.4rem 0.85rem;">
+          ${cat.items.map(it => `
+            <div style="font-size: 0.78rem; color: #475569; padding: 0.2rem 0; display: flex; align-items: center; gap: 0.4rem;">
+              <span style="color: #94a3b8;">↳</span> <span>${escapeHTML(it)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  const evidenceFilesHTML = evidences.length > 0
+    ? evidences.map(ev => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.45rem 0.75rem; border-bottom: 1px solid #f8fafc; font-size: 0.8rem;">
+          <div style="display: flex; align-items: center; gap: 0.4rem; color: #334155;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <strong>${escapeHTML(ev.original_filename || ev.filename || 'evidence_file')}</strong>
+          </div>
+          <span style="font-size: 0.72rem; color: #64748b; font-family: 'JetBrains Mono', monospace;">
+            ${ev.file_size ? `${(ev.file_size / (1024 * 1024)).toFixed(1)} MB` : 'N/A'} • ${ev.file_hash ? ev.file_hash.substring(0, 10) + '...' : 'SHA-256'}
+          </span>
+        </div>
+      `).join('')
+    : `<div style="padding: 0.5rem; color: #94a3b8; font-size: 0.78rem;">No source evidence files registered.</div>`;
+
+  treeContainer.innerHTML = `
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: #0f172a; margin-bottom: 0.85rem; padding: 0.5rem 0.75rem; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+      📁 <strong>Selected Case: ${escapeHTML(caseObj.case_name)} (${caseObj.case_id.substring(0, 8)}...)</strong>
+    </div>
+
+    <!-- Tree Node 1: Evidence Files -->
+    <div style="margin-bottom: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.85rem; color: #1e293b; margin-bottom: 0.4rem;">
+        <span>├──</span> <span>📦 Source Evidence Files (${evidences.length})</span>
+      </div>
+      <div style="margin-left: 1.25rem; border-left: 2px solid #e2e8f0; padding-left: 0.75rem; background: #ffffff; border-radius: 4px;">
+        ${evidenceFilesHTML}
+      </div>
+    </div>
+
+    <!-- Tree Node 2: Extracted Artifacts -->
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.85rem; color: #1e293b; margin-bottom: 0.4rem;">
+        <span>└──</span> <span>⚡ Extracted Forensic Artifacts (${totalArtifacts})</span>
+      </div>
+      <div style="margin-left: 1.25rem; border-left: 2px solid #e2e8f0; padding-left: 0.75rem;">
+        ${categoriesHTML}
+      </div>
+    </div>
+  `;
+}
+
+// Loads and populates Artifact Extraction section for the active case
+window.loadExtractionSection = async function() {
+  try {
+    const cases = await HMACFR_API.getCases();
+    window.g_allCases = cases;
+    const select = document.getElementById("extraction-case-select");
+    const activeCase = window.g_currentActiveCase;
+
+    if (select) {
+      const activeId = activeCase ? activeCase.case_id : "";
+      select.innerHTML = '<option value="">-- Select Target Case --</option>';
+      cases.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.case_id;
+        opt.textContent = `${c.case_name || c.case_id} (${c.case_id.substring(0, 8)}...)`;
+        if (c.case_id === activeId) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      select.onchange = async (e) => {
+        const val = e.target.value;
+        if (val) {
+          await window.setActiveCase(val, { refreshActiveSection: true });
+        } else {
+          window.setActiveCase(null);
+        }
+      };
+    }
+
+    const titleEl = document.getElementById("extraction-active-case-name");
+    const summaryEl = document.getElementById("extraction-evidence-summary");
+    const sourceList = document.getElementById("extraction-source-evidence-list");
+    const sourceCount = document.getElementById("extraction-source-count");
+    const statusText = document.getElementById("extraction-status-text");
+    const statusHud = document.getElementById("extraction-status-hud-pill");
+    const nextBtn = document.getElementById("btn-extraction-to-investigation");
+
+    if (!activeCase) {
+      if (titleEl) titleEl.textContent = "No Case Selected";
+      if (summaryEl) summaryEl.textContent = "Please select an investigation case to view evidence feeds.";
+      if (sourceCount) sourceCount.textContent = "0 Items";
+      if (sourceList) {
+        sourceList.innerHTML = `
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.85rem;">
+            No active case selected. Select a case above to view evidence files.
+          </div>
+        `;
+      }
+      if (statusText) statusText.textContent = "Awaiting Case Selection";
+      if (statusHud) statusHud.innerHTML = `<span style="color: #94a3b8;">●</span> Awaiting Case`;
+      const treeContainer = document.getElementById("extraction-artifact-tree-list");
+      if (treeContainer) {
+        treeContainer.innerHTML = `
+          <div class="empty-state" style="padding: 2.5rem 1rem; text-align: center;">
+            <div style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">No Active Case Selected</div>
+            <div style="font-size: 0.82rem; color: #64748b; max-width: 480px; margin: 0 auto 1.25rem;">
+              Select an investigation case to inspect preserved evidence files and run artifact extraction.
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="switchWorkspaceSection('sec-cases');">Select Case &rarr;</button>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // Active case exists
+    if (titleEl) titleEl.textContent = `${activeCase.case_name} (${activeCase.case_id.substring(0, 8)}...)`;
+
+    const evidences = activeCase.evidences || [];
+    if (summaryEl) {
+      summaryEl.textContent = `${evidences.length} Preserved Artifact${evidences.length === 1 ? '' : 's'} • SHA-256 HMAC Verified`;
+    }
+    if (sourceCount) sourceCount.textContent = `${evidences.length} Item${evidences.length === 1 ? '' : 's'}`;
+
+    if (sourceList) {
+      if (evidences.length === 0) {
+        sourceList.innerHTML = `
+          <div style="text-align: center; color: #94a3b8; padding: 1.5rem; font-size: 0.82rem;">
+            No preserved evidence files found for this case. Upload evidence in Evidence Vault first.
+          </div>
+        `;
+      } else {
+        sourceList.innerHTML = evidences.map(ev => {
+          const isPreserved = ev.status === "READY_FOR_PROCESSING" || ev.status === "Preserved" || ev.file_hash;
+          const sizeStr = ev.file_size ? `${(ev.file_size / (1024 * 1024)).toFixed(1)} MB` : "N/A";
+          const hash = ev.file_hash ? `${ev.file_hash.substring(0, 14)}...` : "SHA-256 Verified";
+          return `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.85rem; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; overflow: hidden;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4ed8" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <div style="font-weight: 600; font-size: 0.82rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(ev.original_filename || ev.filename || 'evidence_file')}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <span style="font-size: 0.7rem; color: #64748b; font-family: 'JetBrains Mono', monospace;">${sizeStr}</span>
+                <span class="badge ${isPreserved ? 'badge-emerald' : 'badge-amber'}" style="font-size: 0.68rem;">${isPreserved ? 'Preserved' : 'Uploaded'}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    const synth = activeCase.synthesized_data;
+    const inv = synth && synth.artifact_inventory ? synth.artifact_inventory : null;
+    const total = inv ? (inv.total_artifacts || 0) : 0;
+
+    if (total > 0) {
+      if (statusText) statusText.textContent = `Extraction completed — ${total} artifacts`;
+      if (statusHud) statusHud.innerHTML = `<span style="color: #10b981;">●</span> Extraction Complete (${total} Artifacts)`;
+      if (nextBtn) {
+        nextBtn.removeAttribute("disabled");
+        nextBtn.style.opacity = "1";
+      }
+    } else {
+      if (statusText) statusText.textContent = "Ready for Extraction";
+      if (statusHud) statusHud.innerHTML = `<span style="color: #10b981;">●</span> Ready for Extraction`;
+    }
+
+    renderArtifactBrowser(activeCase, synth);
+  } catch (err) {
+    console.error("Error loading extraction section:", err);
+  }
+};
+
+// Triggers live backend forensic artifact extraction
+window.triggerArtifactExtraction = async function() {
+  const activeCase = window.g_currentActiveCase;
+  if (!activeCase || !activeCase.case_id) {
+    showSherlockNotice("Case Required", "Please select an active case before running extraction.", true);
+    return;
+  }
+  if (!activeCase.evidences || activeCase.evidences.length === 0) {
+    showSherlockNotice("No Evidence", "This case has no preserved evidence files. Upload evidence first.", true);
+    return;
+  }
+
+  const progContainer = document.getElementById("extraction-progress-container");
+  const progBar = document.getElementById("extraction-progress-bar");
+  const progPct = document.getElementById("extraction-progress-pct");
+  const progLabel = document.getElementById("extraction-progress-label");
+  const statusText = document.getElementById("extraction-status-text");
+  const statusHud = document.getElementById("extraction-status-hud-pill");
+
+  if (progContainer) progContainer.style.display = "block";
+  if (statusText) statusText.textContent = "Extraction in progress...";
+  if (statusHud) statusHud.innerHTML = `<span style="color: #d97706;">●</span> Extracting Artifacts...`;
+
+  let pct = 0;
+  const interval = setInterval(() => {
+    pct = Math.min(pct + 18, 92);
+    if (progBar) progBar.style.width = `${pct}%`;
+    if (progPct) progPct.textContent = `${pct}%`;
+    if (progLabel) progLabel.textContent = `Parsing ${activeCase.evidences.length} evidence file(s)...`;
+  }, 200);
+
+  try {
+    await HMACFR_API.startAnalysis(activeCase.case_id, activeCase.case_name, 10);
+    clearInterval(interval);
+
+    if (progBar) progBar.style.width = "100%";
+    if (progPct) progPct.textContent = "100%";
+    if (progLabel) progLabel.textContent = "Extraction completed successfully!";
+
+    // Re-fetch synthesized forensic data
+    const updatedSynth = await HMACFR_API.getForensicData(activeCase.case_id);
+    activeCase.synthesized_data = updatedSynth;
+    window.currentForensicData = updatedSynth;
+
+    const total = updatedSynth && updatedSynth.artifact_inventory ? (updatedSynth.artifact_inventory.total_artifacts || 0) : 0;
+    if (statusText) statusText.textContent = `Extraction completed — ${total} artifacts`;
+    if (statusHud) statusHud.innerHTML = `<span style="color: #10b981;">●</span> Extraction Complete (${total} Artifacts)`;
+
+    renderArtifactBrowser(activeCase, updatedSynth);
+    showSherlockNotice("Extraction Complete", `Forensic extraction completed: ${total} artifacts categorized.`);
+
+    setTimeout(() => {
+      if (progContainer) progContainer.style.display = "none";
+    }, 2000);
+  } catch (err) {
+    clearInterval(interval);
+    if (statusText) statusText.textContent = "Extraction failed. Review logs and retry.";
+    if (statusHud) statusHud.innerHTML = `<span style="color: #dc2626;">●</span> Extraction Failed`;
+    if (progLabel) progLabel.textContent = "Extraction failed: " + err.message;
+    showSherlockNotice("Extraction Failed", err.message, true);
+  }
+};
+
+// Loads and populates SIS Review section for the active case
+window.loadSisSection = function() {
+  const caseObj = window.g_currentActiveCase;
+  const nameEl = document.getElementById("sis-case-name");
+  if (nameEl) {
+    nameEl.textContent = caseObj ? `${caseObj.case_name} (${caseObj.case_id})` : "No Case Selected";
+  }
+
+  const grid = document.getElementById("sis-hypotheses-grid");
+  if (!grid) return;
+
+  const findings = caseObj && caseObj.synthesized_data && Array.isArray(caseObj.synthesized_data.findings)
+    ? caseObj.synthesized_data.findings
+    : [];
+
+  if (findings.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state" style="padding: 2.5rem; text-align: center; grid-column: 1 / -1;">
+        <div style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">No Investigation Hypotheses Available</div>
+        <div style="font-size: 0.84rem; color: #64748b; max-width: 500px; margin: 0 auto 1.25rem;">
+          No investigation findings available yet.<br>
+          Complete the multi-agent investigation to generate hypotheses for review.
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="switchWorkspaceSection('sec-analysis');">
+          Go to Multi-Agent Investigation &rarr;
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  // Render real findings
+  grid.innerHTML = findings.map((f, idx) => {
+    const sev = (f.severity || "MEDIUM").toUpperCase();
+    const conf = f.confidence ? `${Math.round(f.confidence * (f.confidence <= 1 ? 100 : 1))}%` : "85%";
+    const badgeClass = sev === "CRITICAL" ? "badge-danger" : (sev === "HIGH" ? "badge-amber" : "badge-cyan");
+    const evidenceRef = f.evidence_reference || f.evidence_id || f.source || "Preserved Artifact";
+
+    return `
+      <div class="card hypothesis-card" style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; background: #ffffff;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+          <span class="badge ${badgeClass}" style="font-size: 0.7rem; font-weight: 800;">${sev} HYPOTHESIS</span>
+          <span style="font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #eff6ff; padding: 2px 8px; border-radius: 9999px;">
+            ${conf} Confidence
+          </span>
+        </div>
+        <h4 style="font-size: 0.95rem; font-weight: 700; color: #0f172a; margin-bottom: 0.5rem;">${escapeHTML(f.title || f.name || `Finding #${idx + 1}`)}</h4>
+        <p style="font-size: 0.82rem; color: #475569; line-height: 1.45; margin-bottom: 0.75rem;">${escapeHTML(f.description || f.detail || "Synthesized finding from multi-agent correlation.")}</p>
+        <div style="font-size: 0.72rem; color: #64748b; font-family: 'JetBrains Mono', monospace; border-top: 1px solid #f1f5f9; padding-top: 0.5rem; margin-top: auto;">
+          Artifact Ref: <strong>${escapeHTML(evidenceRef)}</strong>
+        </div>
+      </div>
+    `;
+  }).join('');
+};
+
+// Loads Outputs & Report section for the active case
+window.loadOutputsSection = async function() {
+  const activeCase = window.g_currentActiveCase;
+  const nameEl = document.getElementById("outputs-case-display-name");
+  const pillEl = document.getElementById("outputs-synthesized-pill");
+
+  if (!activeCase || !activeCase.case_id) {
+    if (nameEl) nameEl.textContent = "No Case Selected";
+    if (pillEl) {
+      pillEl.innerHTML = `<span style="color: #94a3b8;">●</span> No Case Selected`;
+      pillEl.style.borderColor = "#cbd5e1";
+      pillEl.style.color = "#64748b";
+    }
+    if (window.clearForensicOutputs) window.clearForensicOutputs();
+    return;
+  }
+
+  if (nameEl) {
+    nameEl.textContent = `${activeCase.case_name} (${activeCase.case_id})`;
+  }
+
+  // Clear previous outputs first to guarantee isolation
+  if (window.clearForensicOutputs) window.clearForensicOutputs();
+
+  const synth = activeCase.synthesized_data;
+  const hasSynthData = synth && (
+    (synth.findings && synth.findings.length > 0) ||
+    (synth.timeline && synth.timeline.length > 0) ||
+    (synth.artifact_inventory && synth.artifact_inventory.total_artifacts > 0)
+  );
+
+  if (hasSynthData) {
+    if (pillEl) {
+      pillEl.innerHTML = `<span style="color: #10b981;">●</span> Intelligence Synthesized`;
+      pillEl.style.borderColor = "rgba(16, 185, 129, 0.4)";
+      pillEl.style.color = "#10b981";
+    }
+    if (window.loadForensicOutputsForCase) {
+      await window.loadForensicOutputsForCase(activeCase.case_id);
+    }
+  } else {
+    if (pillEl) {
+      pillEl.innerHTML = `<span style="color: #d97706;">●</span> Pending Investigation`;
+      pillEl.style.borderColor = "rgba(217, 119, 6, 0.4)";
+      pillEl.style.color = "#d97706";
+    }
   }
 };
 
@@ -1980,7 +2721,20 @@ async function loadOverviewData() {
 
 async function loadHomeSection() {
   try {
-    const cases = g_allCases.length > 0 ? g_allCases : await HMACFR_API.getCases();
+    const [cases, evidences] = await Promise.all([
+      HMACFR_API.getCases(),
+      HMACFR_API.getAllEvidence().catch(() => [])
+    ]);
+    g_allCases = cases;
+    g_caseEvidencesMap = {};
+    if (Array.isArray(evidences)) {
+      evidences.forEach(ev => {
+        if (ev.case_id) {
+          g_caseEvidencesMap[ev.case_id] = (g_caseEvidencesMap[ev.case_id] || 0) + 1;
+        }
+      });
+    }
+
     const ACTIVE_STATUSES = ["OPEN", "IN_PROGRESS", "ACTIVE"];
     const CLOSED_STATUSES = ["SOLVED", "CLOSED"];
     const PENDING_STATUSES = ["PENDING_DELETION"];
@@ -2029,9 +2783,11 @@ async function loadHomeSection() {
 
         cases.slice(0, 5).forEach(c => {
           const row = document.createElement("div");
-          row.className = "timeline-case-card-row";
+          row.className = "case-card-modern";
+          row.onclick = () => openCaseDetails(c.case_id);
           const evCount = g_caseEvidencesMap[c.case_id] || 0;
           const priorityLower = (c.priority || 'medium').toLowerCase();
+          const priorityUpper = (c.priority || 'MEDIUM').toUpperCase();
 
           // Stage Stepper Active Index Derivation
           let activeStageIdx = 0;
@@ -2053,50 +2809,71 @@ async function loadHomeSection() {
             percentStr = "35% reconstructed";
           }
 
-          const stages = ["Acquire", "Extract", "Correlate", "Reconstruct", "AI Analysis", "Review"];
-          const stepperDotsHTML = stages.map((stg, idx) => `
-            <div class="stepper-dot-item ${idx <= activeStageIdx ? 'active' : ''}">
-              <span class="stepper-dot"></span>
-              <span class="stepper-label">${stg}</span>
-            </div>
+          const safeId = escapeHTML(c.case_id);
+          const safeName = escapeHTML(c.case_name || 'Investigation Case');
+          const safeLead = escapeHTML(c.investigator_name || 'investigator1');
+          
+          let cleanStatus = "ACTIVE";
+          const rawSt = (c.status || "").toUpperCase();
+          if (rawSt === "PENDING_DELETION" || rawSt.includes("DELETION")) cleanStatus = "PENDING";
+          else if (rawSt === "CLOSED" || rawSt === "SOLVED") cleanStatus = "SOLVED";
+          else if (rawSt) cleanStatus = rawSt.replace(/_/g, " ").split(" ")[0];
+          const safeStatus = escapeHTML(cleanStatus);
+
+          let safeCreatedDate = 'N/A';
+          if (c.created_at) {
+            try {
+              const d = new Date(c.created_at);
+              safeCreatedDate = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            } catch (e) {
+              safeCreatedDate = String(c.created_at).substring(0, 10);
+            }
+          }
+
+          const stages = ["Ingestion", "Extraction", "Correlation", "Reconstruction", "AI Analysis", "Review"];
+          const currentStageName = stages[activeStageIdx] || "Active Analysis";
+          const segmentsHTML = stages.map((stg, idx) => `
+            <div class="progress-segment ${idx <= activeStageIdx ? 'active' : ''}" title="Stage ${idx+1}: ${stg}"></div>
           `).join('');
 
           row.innerHTML = `
-            <span class="timeline-node-dot"></span>
-            
-            <!-- Col 1: Case Title (top) & Case ID (bottom) -->
-            <div class="case-card-info-col">
-              <div class="case-card-id" onclick="openCaseDetails('${c.case_id}')" title="Inspect Case ${escapeHTML(c.case_name || c.case_id)}">${escapeHTML(c.case_name || 'Investigation Case')}</div>
-              <div class="case-card-title">${escapeHTML(c.case_id.substring(0, 8))}...</div>
-            </div>
-
-            <!-- Col 2: Priority & Dynamic Evidence Count -->
-            <div class="case-card-priority-col">
-              <span class="case-card-priority-tag ${priorityLower}">${escapeHTML(c.priority || 'MEDIUM')}</span>
-              <span class="case-card-artifacts-count">${evCount} evidence</span>
-            </div>
-
-            <!-- Col 3: Horizontal 6-Stage Stepper -->
-            <div class="case-card-stepper-col">
-              <div class="stepper-horizontal-track">
-                <div class="stepper-connecting-line"></div>
-                <div class="stepper-dots-group">
-                  ${stepperDotsHTML}
+            <div class="case-card-accent-line ${priorityLower}"></div>
+            <div class="case-card-inner">
+              <div class="case-card-header-line">
+                <div class="case-card-title-box">
+                  <h4 class="case-card-title" title="Open ${safeName}">${safeName}</h4>
+                  <span class="case-card-id-pill">${safeId.length > 14 ? safeId.substring(0, 10) + '...' : safeId}</span>
+                </div>
+                <div class="case-card-badge-actions">
+                  <span class="case-badge-priority ${priorityLower}">● ${priorityUpper}</span>
+                  <span class="case-badge-status ${cleanStatus === 'PENDING' ? 'status-pending' : (cleanStatus === 'SOLVED' ? 'status-solved' : 'status-active')}">${safeStatus}</span>
+                  <button type="button" class="btn btn-sm btn-open-case" onclick="event.stopPropagation(); openCaseDetails('${c.case_id}');" title="Investigate Case">
+                    <span>Investigate</span>
+                    <span style="margin-left: 3px;">&rarr;</span>
+                  </button>
+                  <button type="button" class="btn-card-action-delete" style="background: transparent; border: none; cursor: pointer; padding: 0.35rem; display: flex; align-items: center; justify-content: center;" title="Delete Case">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#dc2626" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
                 </div>
               </div>
-            </div>
-
-            <!-- Col 4: Status & Progress % -->
-            <div class="case-card-status-col">
-              <span class="case-card-status-text ${c.status === 'PENDING_DELETION' ? 'pending' : ''}">${c.status === 'PENDING_DELETION' ? 'PENDING' : 'ACTIVE'}</span>
-              <span class="case-card-percent-text">${percentStr}</span>
-            </div>
-
-            <!-- Col 5: Direct Red Delete Trash Action Icon -->
-            <div style="display: flex; justify-content: flex-end;">
-              <button type="button" class="btn-card-action-delete" style="background: transparent; border: none; cursor: pointer; padding: 0.35rem; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s ease;" onmouseover="this.style.opacity='0.75';" onmouseout="this.style.opacity='1.0';" title="Delete Case">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#dc2626" stroke-width="2" style="pointer-events: none;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+              <div class="case-card-meta-line">
+                <div class="case-card-details-group">
+                  <span class="case-meta-item">Lead: <strong>${safeLead}</strong></span>
+                  <span class="case-meta-dot">•</span>
+                  <span class="case-meta-item">Evidence: <strong>${evCount} item${evCount === 1 ? '' : 's'}</strong></span>
+                  <span class="case-meta-dot">•</span>
+                  <span class="case-meta-item">Created: <strong>${safeCreatedDate}</strong></span>
+                </div>
+                <div class="case-card-progress-wrapper">
+                  <div class="case-card-progress-block">
+                    <div class="progress-segments-bar">${segmentsHTML}</div>
+                    <div class="progress-labels-row">
+                      <span class="progress-stage-name">Stage ${activeStageIdx+1}: <strong>${currentStageName}</strong></span>
+                      <span class="progress-pct-badge">${percentStr}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           `;
 
@@ -2183,8 +2960,20 @@ window.syncTopSubnavTab = function(targetId) {
 // Async Load Cases Section & Update Stat Counts Dynamically
 window.loadCasesSection = async function() {
   try {
-    const cases = await HMACFR_API.getCases();
+    const [cases, evidences] = await Promise.all([
+      HMACFR_API.getCases(),
+      HMACFR_API.getAllEvidence().catch(() => [])
+    ]);
     g_allCases = cases;
+    g_caseEvidencesMap = {};
+    if (Array.isArray(evidences)) {
+      evidences.forEach(ev => {
+        if (ev.case_id) {
+          g_caseEvidencesMap[ev.case_id] = (g_caseEvidencesMap[ev.case_id] || 0) + 1;
+        }
+      });
+    }
+
     let solvedCount = 0;
     let activeCasesCount = 0;
 
@@ -2657,14 +3446,12 @@ function renderPriorityCasesTable(cases) {
   container.innerHTML = "";
   cases.forEach(c => {
     const card = document.createElement("div");
-    card.className = "active-case-dashboard-card";
+    card.className = "case-card-modern";
+    card.onclick = () => openCaseDetails(c.case_id);
     const evCount = g_caseEvidencesMap[c.case_id] || 0;
     
     const priorityUpper = (c.priority || 'MEDIUM').toUpperCase();
-    let accentColor = "#2563eb";
-    if (priorityUpper === "CRITICAL") accentColor = "#dc2626";
-    else if (priorityUpper === "HIGH") accentColor = "#d97706";
-    else if (priorityUpper === "LOW") accentColor = "#16a34a";
+    const priorityLower = (c.priority || 'medium').toLowerCase();
 
     const safeId = escapeHTML(c.case_id);
     const safeName = escapeHTML(c.case_name || 'Investigation Case');
@@ -2698,91 +3485,84 @@ function renderPriorityCasesTable(cases) {
       percentStr = "35% reconstructed";
     }
 
-    const stages = ["Acquire", "Extract", "Correlate", "Reconstruct", "AI Analysis", "Review"];
-    const stepperDotsHTML = stages.map((stg, idx) => `
-      <div class="stepper-dot-item ${idx <= activeStageIdx ? 'active' : ''}">
-        <span class="stepper-dot"></span>
-        <span class="stepper-label">${stg}</span>
-      </div>
+    let safeCreatedDate = 'N/A';
+    if (c.created_at) {
+      try {
+        const d = new Date(c.created_at);
+        safeCreatedDate = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      } catch (e) {
+        safeCreatedDate = String(c.created_at).substring(0, 10);
+      }
+    }
+
+    const stages = ["Ingestion", "Extraction", "Correlation", "Reconstruction", "AI Analysis", "Review"];
+    const currentStageName = stages[activeStageIdx] || "Active Analysis";
+    const segmentsHTML = stages.map((stg, idx) => `
+      <div class="progress-segment ${idx <= activeStageIdx ? 'active' : ''}" title="Stage ${idx+1}: ${stg}"></div>
     `).join('');
 
     card.innerHTML = `
-      <div class="case-card-accent-bar" style="background: ${accentColor};"></div>
+      <div class="case-card-accent-line ${priorityLower}"></div>
+      <div class="case-card-inner">
+        <!-- Row 1: Title, ID, Priority Badge, Status Badge & Actions -->
+        <div class="case-card-header-line">
+          <div class="case-card-title-box">
+            <h4 class="case-card-title" title="Open ${safeName}">${safeName}</h4>
+            <span class="case-card-id-pill">${safeId.length > 14 ? safeId.substring(0, 10) + '...' : safeId}</span>
+          </div>
 
-      <!-- Col 1: Case ID & Title -->
-      <div style="display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #f1f5f9; padding-right: 0.75rem;">
-        <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em;">CASE ID</span>
-        <span style="font-size: 0.9rem; font-weight: 800; color: #0f172a; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" onclick="openCaseDetails('${c.case_id}')" title="Inspect ${safeId}">${safeName}</span>
-        <span style="font-size: 0.75rem; color: #64748b;">${safeId.substring(0, 8)}...</span>
-      </div>
+          <div class="case-card-badge-actions">
+            <span class="case-badge-priority ${priorityLower}">● ${priorityUpper}</span>
+            <span class="case-badge-status ${cleanStatus === 'PENDING' ? 'status-pending' : (cleanStatus === 'SOLVED' ? 'status-solved' : 'status-active')}">${safeStatus}</span>
+            
+            <button type="button" class="btn btn-sm btn-open-case" onclick="event.stopPropagation(); openCaseDetails('${c.case_id}');" title="Investigate Case">
+              <span>Investigate</span>
+              <span style="margin-left: 3px;">&rarr;</span>
+            </button>
 
-      <!-- Col 2: Lead & Created -->
-      <div style="display: flex; flex-direction: column; gap: 0.25rem; border-right: 1px solid #f1f5f9; padding-right: 0.75rem;">
-        <div>
-          <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">LEAD</span>
-          <div style="font-size: 0.78rem; color: #334155; font-weight: 600; display: flex; align-items: center; gap: 0.25rem; margin-top: 1px; white-space: nowrap;">
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="#64748b" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span>${safeLead}</span>
+            ${cleanStatus === 'PENDING' && (HMACFR_API.getUser() && (HMACFR_API.getUser().role === 'Admin' || HMACFR_API.getUser().role === 'ADMIN')) ? `
+              <button type="button" onclick="event.stopPropagation(); window.adminResolveCaseDeletion('${c.case_id}', 'APPROVE', '${escapeQuotes(c.case_name)}', event);" style="background: transparent; border: none; cursor: pointer; padding: 0.25rem; color: #059669;" title="Approve Deletion">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#059669" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+              <button type="button" onclick="event.stopPropagation(); window.adminResolveCaseDeletion('${c.case_id}', 'REJECT', '${escapeQuotes(c.case_name)}', event);" style="background: transparent; border: none; cursor: pointer; padding: 0.25rem; color: #dc2626;" title="Reject Deletion">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#dc2626" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            ` : `
+              <button type="button" class="btn-card-action-delete" style="background: transparent; border: none; cursor: pointer; padding: 0.35rem; display: flex; align-items: center; justify-content: center;" title="Delete Case">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#dc2626" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            `}
           </div>
         </div>
-        <div>
-          <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">CREATED</span>
-          <span style="font-size: 0.72rem; color: #64748b; white-space: nowrap;">25 Aug 2025</span>
-        </div>
-      </div>
 
-      <!-- Col 3: Priority & Evidence -->
-      <div style="display: flex; flex-direction: column; gap: 0.25rem; border-right: 1px solid #f1f5f9; padding-right: 0.75rem;">
-        <div>
-          <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">PRIORITY</span>
-          <span style="font-size: 0.72rem; font-weight: 800; color: ${accentColor}; text-transform: uppercase; white-space: nowrap;">● ${priorityUpper}</span>
-        </div>
-        <div>
-          <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">EVIDENCE</span>
-          <div style="font-size: 0.78rem; color: #475569; font-weight: 600; display: flex; align-items: center; gap: 0.25rem; margin-top: 1px; white-space: nowrap;">
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="#64748b" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            <span>${evCount} items</span>
+        <!-- Row 2: Metadata Pills & Segmented Progress Bar -->
+        <div class="case-card-meta-line">
+          <div class="case-card-details-group">
+            <span class="case-meta-item">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#64748b" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Lead: <strong>${safeLead}</strong></span>
+            </span>
+            <span class="case-meta-dot">•</span>
+            <span class="case-meta-item">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#64748b" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <span>Evidence: <strong>${evCount} item${evCount === 1 ? '' : 's'}</strong></span>
+            </span>
+            <span class="case-meta-dot">•</span>
+            <span class="case-meta-item">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Created: <strong>${safeCreatedDate}</strong></span>
+            </span>
           </div>
-        </div>
-      </div>
 
-      <!-- Col 4: Investigation Stage Stepper -->
-      <div style="border-right: 1px solid #f1f5f9; padding-right: 0.75rem; width: 100%;">
-        <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block; margin-bottom: 0.35rem;">INVESTIGATION STAGE</span>
-        <div class="stepper-horizontal-track">
-          <div class="stepper-connecting-line"></div>
-          <div class="stepper-dots-group">
-            ${stepperDotsHTML}
+          <div class="case-card-progress-wrapper">
+            <div class="case-card-progress-block">
+              <div class="progress-segments-bar">${segmentsHTML}</div>
+              <div class="progress-labels-row">
+                <span class="progress-stage-name">Stage ${activeStageIdx+1}: <strong>${currentStageName}</strong></span>
+                <span class="progress-pct-badge">${percentStr}</span>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Col 5: Progress % -->
-      <div style="border-right: 1px solid #f1f5f9; padding-right: 0.75rem;">
-        <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">PROGRESS</span>
-        <span style="font-size: 0.88rem; font-weight: 800; color: #2563eb; white-space: nowrap;">${percentStr.split(' ')[0]}</span>
-        <span style="font-size: 0.68rem; color: #64748b; display: block; white-space: nowrap;">reconstructed</span>
-      </div>
-
-      <!-- Col 6: Status & Actions -->
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; width: 100%;">
-        <div>
-          <span style="font-size: 0.62rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; display: block;">STATUS</span>
-          <span style="font-size: 0.8rem; font-weight: 800; color: ${cleanStatus === 'PENDING' ? '#d97706' : '#2563eb'}; letter-spacing: 0.05em; display: inline-block; border-bottom: 2px solid ${cleanStatus === 'PENDING' ? '#d97706' : '#2563eb'}; padding-bottom: 1px; white-space: nowrap;">${safeStatus}</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 0.25rem;">
-          ${cleanStatus === 'PENDING' && (HMACFR_API.getUser() && (HMACFR_API.getUser().role === 'Admin' || HMACFR_API.getUser().role === 'ADMIN')) ? `
-            <button type="button" onclick="window.adminResolveCaseDeletion('${c.case_id}', 'APPROVE', '${escapeQuotes(c.case_name)}', event);" style="background: transparent; border: none; cursor: pointer; padding: 0.25rem; color: #059669; display: flex; align-items: center; justify-content: center;" title="Approve Case Deletion (Purge)">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#059669" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            </button>
-            <button type="button" onclick="window.adminResolveCaseDeletion('${c.case_id}', 'REJECT', '${escapeQuotes(c.case_name)}', event);" style="background: transparent; border: none; cursor: pointer; padding: 0.25rem; color: #dc2626; display: flex; align-items: center; justify-content: center;" title="Reject Case Deletion (Restore Active)">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#dc2626" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          ` : `
-            <button type="button" class="btn-card-action-delete" onclick="window.adminPurgeCase('${c.case_id}', '${escapeQuotes(c.case_name)}', event);" style="background: transparent; border: none; cursor: pointer; padding: 0.35rem; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s ease;" onmouseover="this.style.opacity='0.75';" onmouseout="this.style.opacity='1.0';" title="Delete Case">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#dc2626" stroke-width="2" style="pointer-events: none;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-          `}
         </div>
       </div>
     `;
@@ -2978,6 +3758,60 @@ function handleAnalysisWebSocketMessage(msg) {
     terminal.appendChild(line);
     terminal.scrollTop = terminal.scrollHeight;
   }
+
+  // Real-time agent status cards synchronization
+  const logLower = (msg.log || "").toLowerCase();
+  const stgNum = typeof msg.stage === "number" ? msg.stage : -1;
+
+  function setAgentCard(agentKey, status, activity, pVal) {
+    const sEl = document.getElementById(`agent-status-${agentKey}`);
+    if (sEl) {
+      sEl.textContent = status;
+      sEl.className = "badge " + (status === "Complete" ? "badge-emerald" : (status === "Running" ? "badge-cyan" : "badge-emerald"));
+    }
+    const aEl = document.getElementById(`agent-activity-${agentKey}`);
+    if (aEl && activity) aEl.textContent = activity;
+    const pEl = document.getElementById(`agent-prog-${agentKey}`);
+    if (pEl && typeof pVal === "number") pEl.style.width = `${Math.min(100, Math.max(0, pVal))}%`;
+  }
+
+  if (logLower.includes("supervisor") || logLower.includes("dispatch") || stgNum === 0) {
+    setAgentCard("supervisor", "Running", "Orchestrating agents", Math.min(progress * 1.5, 95));
+  }
+  if (logLower.includes("pcap") || logLower.includes("network") || logLower.includes("dns") || stgNum === 1) {
+    setAgentCard("network", "Running", "Extracting PCAP flows & DNS", Math.min(progress * 1.3, 95));
+    setAgentCard("supervisor", "Complete", "Delegated to sub-agents", 100);
+  }
+  if (logLower.includes("memory") || logLower.includes("volatility") || logLower.includes("malfind") || stgNum === 2) {
+    setAgentCard("memory", "Running", "Scanning processes & VAD injections", Math.min(progress * 1.2, 95));
+    setAgentCard("network", "Complete", "Network streams parsed", 100);
+  }
+  if (logLower.includes("log") || logLower.includes("event") || logLower.includes("sysmon") || stgNum === 3) {
+    setAgentCard("log", "Running", "Parsing event logs & registry keys", Math.min(progress * 1.1, 95));
+    setAgentCard("memory", "Complete", "Memory dumps analyzed", 100);
+  }
+  if (logLower.includes("correlat") || stgNum === 4) {
+    setAgentCard("correlation", "Running", "Synthesizing correlation chains", Math.min(progress, 95));
+    setAgentCard("log", "Complete", "Log telemetry correlated", 100);
+  }
+
+  // Auto-refresh synthesized outputs workbench when analysis finishes
+  if (msg.status === "completed" || msg.type === "ANALYSIS_COMPLETE") {
+    ["supervisor", "network", "memory", "log", "correlation"].forEach(k => {
+      setAgentCard(k, "Complete", "Forensic analysis complete", 100);
+    });
+
+    const completionBanner = document.getElementById("analysis-completion-banner");
+    if (completionBanner) {
+      completionBanner.style.display = "flex";
+      completionBanner.style.border = "1px solid #10b981";
+      completionBanner.style.boxShadow = "0 0 16px rgba(16, 185, 129, 0.2)";
+    }
+
+    if (window.loadForensicOutputsForCase && msg.case_id) {
+      window.loadForensicOutputsForCase(msg.case_id);
+    }
+  }
 }
 
 function updateAnalysisStatusBadge(taskId, statusText) {
@@ -2985,25 +3819,83 @@ function updateAnalysisStatusBadge(taskId, statusText) {
   if (stageDesc) stageDesc.textContent = `Analysis Stream ${statusText}`;
 }
 
-async function loadAnalysisSection() {
+window.loadAnalysisSection = async function() {
   try {
     const cases = await HMACFR_API.getCases();
+    window.g_allCases = cases;
     const select = document.getElementById("analysis-case-select");
-    if (!select) return;
+    const activeCase = window.g_currentActiveCase;
 
-    const currentVal = select.value;
-    select.innerHTML = '<option value="">-- Select Target Case --</option>';
-    cases.forEach(c => {
-      const opt = document.createElement("option");
-      opt.value = c.case_id;
-      opt.textContent = `${c.case_id} — ${c.case_name}`;
-      if (c.case_id === currentVal) opt.selected = true;
-      select.appendChild(opt);
-    });
+    if (select) {
+      const activeId = activeCase ? activeCase.case_id : "";
+      select.innerHTML = '<option value="">-- Select Target Case --</option>';
+      cases.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.case_id;
+        opt.textContent = `${c.case_id} — ${c.case_name}`;
+        if (c.case_id === activeId) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      select.onchange = async (e) => {
+        const val = e.target.value;
+        if (val) {
+          await window.setActiveCase(val, { refreshActiveSection: true });
+        } else {
+          window.setActiveCase(null);
+        }
+      };
+    }
+
+    const completionBanner = document.getElementById("analysis-completion-banner");
+
+    function setAgentCard(agentKey, status, activity, pVal, badgeClass) {
+      const sEl = document.getElementById(`agent-status-${agentKey}`);
+      if (sEl) {
+        sEl.textContent = status;
+        sEl.className = "badge " + (badgeClass || (status === "Complete" ? "badge-emerald" : (status === "Running" ? "badge-cyan" : (status === "READY" ? "badge-cyan" : "badge-secondary"))));
+      }
+      const aEl = document.getElementById(`agent-activity-${agentKey}`);
+      if (aEl && activity) aEl.textContent = activity;
+      const pEl = document.getElementById(`agent-prog-${agentKey}`);
+      if (pEl && typeof pVal === "number") pEl.style.width = `${Math.min(100, Math.max(0, pVal))}%`;
+    }
+
+    if (!activeCase) {
+      setAgentCard("supervisor", "WAITING", "Awaiting case selection", 0, "badge-secondary");
+      setAgentCard("network", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("memory", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("log", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("correlation", "WAITING", "Awaiting agent inputs", 0, "badge-secondary");
+      if (completionBanner) completionBanner.style.display = "none";
+      return;
+    }
+
+    const synth = activeCase.synthesized_data;
+    const hasCompleted = synth && (
+      (synth.findings && synth.findings.length > 0) ||
+      (synth.timeline && synth.timeline.length > 0)
+    );
+
+    if (hasCompleted) {
+      setAgentCard("supervisor", "Complete", "Delegated to sub-agents & completed", 100, "badge-emerald");
+      setAgentCard("network", "Complete", "Network streams parsed", 100, "badge-emerald");
+      setAgentCard("memory", "Complete", "Memory dumps analyzed", 100, "badge-emerald");
+      setAgentCard("log", "Complete", "Log telemetry correlated", 100, "badge-emerald");
+      setAgentCard("correlation", "Complete", "Synthesized correlation chains", 100, "badge-emerald");
+      if (completionBanner) completionBanner.style.display = "flex";
+    } else {
+      setAgentCard("supervisor", "READY", "Supervisor ready for dispatch", 0, "badge-cyan");
+      setAgentCard("network", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("memory", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("log", "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
+      setAgentCard("correlation", "WAITING", "Awaiting agent inputs", 0, "badge-secondary");
+      if (completionBanner) completionBanner.style.display = "none";
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Error loading analysis section:", err);
   }
-}
+};
 
 async function loadProfileSection() {
   const user = HMACFR_API.getUser() || { username: "Investigator", role: "Investigator" };
@@ -3080,33 +3972,66 @@ async function loadEvidenceVaultSection() {
   const tbody = document.getElementById("vault-repo-table-body");
   const countEl = document.getElementById("vault-repo-total-count");
   const caseSelect = document.getElementById("vault-repo-case-select");
+  const bannerName = document.getElementById("vault-case-display-name");
   if (!tbody) return;
 
   tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading Evidence Vault Repository...</td></tr>`;
 
   try {
-    // 1. Fetch cases to populate Case Filter Dropdown
     const cases = await HMACFR_API.getCases();
+    window.g_allCases = cases;
     const casesMap = {};
+    cases.forEach(c => { casesMap[c.case_id] = c.case_name; });
+
     if (caseSelect) {
-      const currentCase = caseSelect.value;
-      caseSelect.innerHTML = '<option value="">-- All Investigation Cases --</option>';
+      const activeId = window.g_currentActiveCase ? window.g_currentActiveCase.case_id : "";
+      caseSelect.innerHTML = '<option value="">-- Select Case to View Evidence --</option>';
       cases.forEach(c => {
-        casesMap[c.case_id] = c.case_name;
         const opt = document.createElement("option");
         opt.value = c.case_id;
-        opt.textContent = `${c.case_id.substring(0, 8)}... (${c.case_name})`;
-        if (c.case_id === currentCase) opt.selected = true;
+        opt.textContent = `${c.case_name || c.case_id} (${c.case_id.substring(0, 8)}...)`;
+        if (c.case_id === activeId) opt.selected = true;
         caseSelect.appendChild(opt);
       });
-    } else {
-      cases.forEach(c => { casesMap[c.case_id] = c.case_name; });
+
+      caseSelect.onchange = async (e) => {
+        const val = e.target.value;
+        if (val) {
+          await window.setActiveCase(val, { refreshActiveSection: true });
+        } else {
+          window.setActiveCase(null);
+          renderEvidenceVaultTable(casesMap);
+        }
+      };
     }
 
-    // 2. Fetch all evidence items from backend
-    g_allVaultEvidence = await HMACFR_API.getAllEvidence();
-    if (countEl) countEl.textContent = g_allVaultEvidence.length;
+    if (!window.g_currentActiveCase) {
+      if (countEl) countEl.textContent = "0";
+      if (bannerName) bannerName.textContent = "No Active Case Selected";
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8">
+            <div class="empty-state" style="padding: 2.5rem; text-align: center;">
+              <div class="empty-state-title" style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">No Active Case Selected</div>
+              <div class="empty-state-subtitle" style="font-size: 0.82rem; color: #64748b; margin-bottom: 1rem;">Select an active case above or from the Cases dashboard to inspect preserved evidence files.</div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="switchWorkspaceSection('sec-cases');">Select Case &rarr;</button>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
 
+    const activeCase = window.g_currentActiveCase;
+    if (bannerName) bannerName.textContent = `${activeCase.case_name} (${activeCase.case_id})`;
+
+    const evidences = await HMACFR_API.getAllEvidence(activeCase.case_id);
+    activeCase.evidences = evidences;
+    activeCase.evidence_count = evidences.length;
+    activeCase.evidence_ids = evidences.map(e => e.evidence_id);
+    g_allVaultEvidence = evidences;
+
+    if (countEl) countEl.textContent = evidences.length;
     renderEvidenceVaultTable(casesMap);
   } catch (err) {
     console.error("Error loading evidence vault repository:", err);
@@ -3117,13 +4042,11 @@ async function loadEvidenceVaultSection() {
 function renderEvidenceVaultTable(casesMap = {}) {
   const tbody = document.getElementById("vault-repo-table-body");
   const searchInput = document.getElementById("vault-repo-search-input");
-  const caseSelect = document.getElementById("vault-repo-case-select");
   const catSelect = document.getElementById("vault-repo-category-select");
 
   if (!tbody) return;
 
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
-  const selectedCase = caseSelect ? caseSelect.value : "";
   const selectedCat = catSelect ? catSelect.value : "ALL";
 
   let filtered = g_allVaultEvidence.filter(ev => {
@@ -3131,25 +4054,23 @@ function renderEvidenceVaultTable(casesMap = {}) {
     if (query) {
       matchQuery = (
         (ev.original_filename && ev.original_filename.toLowerCase().includes(query)) ||
-        (ev.case_id && ev.case_id.toLowerCase().includes(query)) ||
         (ev.category && ev.category.toLowerCase().includes(query)) ||
         (ev.file_hash && ev.file_hash.toLowerCase().includes(query))
       );
     }
-
-    const matchCase = !selectedCase || (ev.case_id === selectedCase);
     const matchCat = (selectedCat === "ALL") || (ev.category && ev.category.toLowerCase() === selectedCat.toLowerCase());
-
-    return matchQuery && matchCase && matchCat;
+    return matchQuery && matchCat;
   });
 
   if (filtered.length === 0) {
+    const caseName = window.g_currentActiveCase ? window.g_currentActiveCase.case_name : "this case";
     tbody.innerHTML = `
       <tr>
         <td colspan="8">
-          <div class="empty-state" style="padding: 2rem;">
-            <div class="empty-state-title">No Matching Evidence Artifacts</div>
-            <div class="empty-state-subtitle">No digital evidence artifacts match the current search or filter criteria.</div>
+          <div class="empty-state" style="padding: 2.5rem; text-align: center;">
+            <div class="empty-state-title" style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">No Evidence Files Found</div>
+            <div class="empty-state-subtitle" style="font-size: 0.82rem; color: #64748b; margin-bottom: 1rem;">No evidence artifacts found for case: <strong>${escapeHTML(caseName)}</strong>.</div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="switchWorkspaceSection('sec-upload');">Upload Evidence &rarr;</button>
           </div>
         </td>
       </tr>

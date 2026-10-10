@@ -70,3 +70,12 @@ backend/evidence_vault/04977087-*
 
 # Rust / Tauri builds
 src-tauri/target/
+# Digital forensic evidence — keep local
+backend/evidence_vault/
+
+# Generated forensic analysis output
+backend/output/cases/
+
+# Large forensic evidence files
+*.E01
+*.mem

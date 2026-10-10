@@ -1,0 +1,11 @@
+{
+    "RegistryExtractor": true,
+    "BrowserExtractor": true,
+    "EventLogExtractor": true,
+    "PrefetchExtractor": true,
+    "RecycleBinExtractor": true,
+    "LnkExtractor": true,
+    "JumpListExtractor": true,
+    "MFTExtractor": true,
+    "EmailExtractor": true
+}

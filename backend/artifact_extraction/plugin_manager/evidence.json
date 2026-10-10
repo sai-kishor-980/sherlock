@@ -1,0 +1,11 @@
+{
+    "case_id": "DISK_2",
+    "evidence": [
+         {
+            "evidence_id": "2020",
+            "path": "C:/Users/saiki/Desktop/BTECH/ForensicAI/project/prot1-main/20200918_0347_CDrive.E01",
+            "type": "disk",
+            "name": "DISK"
+        }
+    ]
+}

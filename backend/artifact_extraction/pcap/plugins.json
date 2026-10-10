@@ -1,0 +1,7 @@
+{
+    "DnsExtractor": true,
+    "HttpExtractor": true,
+    "TlsExtractor": true,
+    "IpStatsExtractor": true,
+    "FileExtractor": true
+}

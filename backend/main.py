@@ -61,6 +61,18 @@ async def lifespan(app: FastAPI):
         admin_hash = get_password_hash("Admin@2026")
         inv_hash = get_password_hash("Investigator@2026")
         UserRepository.seed_default_users(db, investigator_hash=inv_hash, admin_hash=admin_hash)
+
+        # 3. Seed Default Sample Forensic Cases for Extraction & Output Demonstration
+        from app.db.models.case import Case
+        sample_cases = [
+            ("Bharath_TES1", "RAM Memory Forensic Scan (Cridex)", "Investigator 01", "Volatile memory dump inspection with Volatility 3, pslist, and malfind detections.", "Critical"),
+            ("DISK_1", "Windows Disk Artifact Analysis", "Investigator 01", "Forensic extraction of Windows Registry, Prefetch, USB devices, and MFT records.", "High")
+        ]
+        for c_id, c_name, c_inv, c_desc, c_prio in sample_cases:
+            existing = db.query(Case).filter(Case.case_id == c_id).first()
+            if not existing:
+                db.add(Case(case_id=c_id, case_name=c_name, investigator_name=c_inv, description=c_desc, priority=c_prio, status="Active"))
+        db.commit()
     except Exception as e:
         log_error_event(f"Error seeding default application accounts: {str(e)}")
         db.rollback()
@@ -171,8 +183,22 @@ def create_app() -> FastAPI:
             return FileResponse(index_file)
         return JSONResponse(status_code=404, content={"detail": f"{file_path} not found"})
 
-    # Also serve static files directly if mounted at /ui static
+    # Mount static assets for root and /ui paths (images, css, js)
     if os.path.exists(frontend_dir):
+        images_dir = os.path.join(frontend_dir, "images")
+        css_dir = os.path.join(frontend_dir, "css")
+        js_dir = os.path.join(frontend_dir, "js")
+        
+        if os.path.exists(images_dir):
+            app.mount("/images", StaticFiles(directory=images_dir), name="images")
+            app.mount("/ui/images", StaticFiles(directory=images_dir), name="ui_images")
+        if os.path.exists(css_dir):
+            app.mount("/css", StaticFiles(directory=css_dir), name="css")
+            app.mount("/ui/css", StaticFiles(directory=css_dir), name="ui_css")
+        if os.path.exists(js_dir):
+            app.mount("/js", StaticFiles(directory=js_dir), name="js")
+            app.mount("/ui/js", StaticFiles(directory=js_dir), name="ui_js")
+
         app.mount("/static", StaticFiles(directory=frontend_dir, html=True), name="static")
 
 
