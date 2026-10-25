@@ -70,21 +70,6 @@ async def lifespan(app: FastAPI):
         admin_hash = get_password_hash("Admin@2026")
         inv_hash = get_password_hash("Investigator@2026")
         UserRepository.seed_default_users(db, investigator_hash=inv_hash, admin_hash=admin_hash)
-
-        # 3. Seed Default Sample Forensic Cases for Extraction & Output Demonstration
-        from app.db.models.case import Case
-        sample_cases = [
-            ("Bharath_TES1", "RAM Memory Forensic Scan (Cridex)", "Investigator 01", "Volatile memory dump inspection with Volatility 3, pslist, and malfind detections.", "Critical"),
-            ("DISK_1", "Windows Disk Artifact Analysis", "Investigator 01", "Forensic extraction of Windows Registry, Prefetch, USB devices, and MFT records.", "High")
-        ]
-        from app.services.rbac_service import RBACService
-        inv_user = db.query(User).filter(User.username == "investigator1").first()
-        for c_id, c_name, c_inv, c_desc, c_prio in sample_cases:
-            existing = db.query(Case).filter(Case.case_id == c_id).first()
-            if not existing:
-                db.add(Case(case_id=c_id, case_name=c_name, investigator_name=c_inv, description=c_desc, priority=c_prio, status="Active"))
-            if inv_user:
-                RBACService.assign_case_creator(db=db, case_id=c_id, user_id=inv_user.user_id)
         db.commit()
     except Exception as e:
         log_error_event(f"Error seeding default application accounts: {str(e)}")

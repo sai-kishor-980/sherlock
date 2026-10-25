@@ -44,6 +44,7 @@ backend/app/db/*.sqlite
 # --- Forensic Evidence Vault & Raw Dump Images (Keep Local) ---
 backend/evidence_vault/
 evidence_vault/
+evidences/
 backend/uploads/*
 !backend/uploads/.gitkeep
 *.E01
