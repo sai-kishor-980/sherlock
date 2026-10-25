@@ -1,21 +1,16 @@
-# Byte-compiled / optimized files
+# =============================================================================
+# Sherlock AI Forensic Platform - Git Ignore Rules
+# =============================================================================
+
+# --- Python & Bytecode ---
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
-build/
 develop-eggs/
-dist/
-downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -25,57 +20,101 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# --- Virtual Environments ---
 venv/
 env/
 ENV/
+.venv/
 env.bak/
 venv.bak/
 
-# Environment variables
+# --- Environment Variables & Secrets ---
 .env
-.env.local
+.env.*
+!.env.example
 
-# Database
+# --- Databases & Vector Stores ---
 *.db
 *.sqlite
 *.sqlite3
+backend/knowledge_base/chroma_db/
+backend/app/db/*.db
+backend/app/db/*.sqlite
 
-# Logs
-backend/logs/*.log
+# --- Forensic Evidence Vault & Raw Dump Images (Keep Local) ---
+backend/evidence_vault/
+evidence_vault/
+backend/uploads/*
+!backend/uploads/.gitkeep
+*.E01
+*.e01
+*.001
+*.raw
+*.mem
+*.vmem
+*.dmp
+*.dd
+*.img
+*.pcap
+*.pcapng
+*.evtx
+*.mbox
 
-# IDE & Editors
+# Allow small test fixtures in sample_evidence
+!backend/sample_evidence/*
+!backend/sample_evidence/**
+
+# --- Generated Forensic Case Analysis Outputs ---
+backend/output/
+output/
+test_disk_out*
+
+# --- Machine Learning Models, LoRA Adapters & Large Weights ---
+models/
+models.zip
+Cybersecurity_Qwen3_QLoRA_Package.zip
+backend/app/models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# --- Logs & Execution Diagnostics ---
+backend/logs/
+*.log
+*.jsonl
+backend/artifact_extraction/memory/logs/
+
+# --- PyInstaller & Desktop Executable Builds ---
+build/
+dist/
+*.spec
+*.exe
+*.pkg
+*.pyz
+
+# --- Test Caches ---
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+htmlcov/
+
+# --- IDEs & System Files ---
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS generated files
 .DS_Store
 Thumbs.db
+ehthumbs.db
+desktop.ini
 
-# Pytest & test caches
-.pytest_cache/
-backend/.pytest_cache/
-
-# Evidence Uploads & Vault generated files
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/evidence_vault/temp/*
-!backend/evidence_vault/temp/.gitkeep
-backend/evidence_vault/encrypted/*
-!backend/evidence_vault/encrypted/.gitkeep
-backend/evidence_vault/test_case_*
-backend/evidence_vault/04977087-*
-
-# Rust / Tauri builds
+# --- Tauri / Rust (if applicable) ---
 src-tauri/target/
-# Digital forensic evidence — keep local
-backend/evidence_vault/
-
-# Generated forensic analysis output
-backend/output/cases/
-
-# Large forensic evidence files
-*.E01
-*.mem

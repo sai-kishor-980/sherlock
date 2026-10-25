@@ -12,6 +12,14 @@ class BasePCAPExtractor(ABC):
         self.pcap_path = context.pcap_path
         self.output_dir = Path(context.output_dir)
 
+    def get_packets(self):
+        if hasattr(self.context, "get_packets"):
+            return self.context.get_packets()
+        if hasattr(self.context, "packets") and self.context.packets is not None:
+            return self.context.packets
+        from scapy.all import rdpcap
+        return rdpcap(str(self.pcap_path))
+
     @abstractmethod
     def extract(self):
         """

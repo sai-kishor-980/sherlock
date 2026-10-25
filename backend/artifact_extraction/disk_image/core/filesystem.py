@@ -29,6 +29,12 @@ class FileSystem:
         """
         return self._fs.open(path)
 
+    def open_meta(self, addr):
+        """
+        Open a file or directory by its metadata/inode address.
+        """
+        return self._fs.open_meta(addr)
+
     def exists(self, path):
         """
         Check whether a file or directory exists.
@@ -66,7 +72,7 @@ class FileSystem:
             try:
                 name = entry.info.name.name.decode(
                     "utf-8",
-                    errors="ignore"
+                    errors="replace"
                 )
 
                 if name in (".", ".."):

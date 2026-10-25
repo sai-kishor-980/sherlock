@@ -31,7 +31,7 @@ class DnsExtractor(BasePCAPExtractor):
 
         dns_records = []
         try:
-            packets = rdpcap(str(self.pcap_path))
+            packets = self.get_packets()
             for pkt in packets:
                 if pkt.haslayer(DNS) and pkt.haslayer(DNSQR):
                     ip_src = pkt[IP].src if pkt.haslayer(IP) else (pkt[IPv6].src if pkt.haslayer(IPv6) else "")

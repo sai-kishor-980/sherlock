@@ -1,0 +1,398 @@
+[
+  {
+    "sample_id": "PAIR-POS-00000001",
+    "investigation_id": "SYNTH_CASE_ALPHA",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "os_version": "Windows 10",
+      "environment_type": "ENTERPRISE_WORKSTATION",
+      "scenario_type": "APT_INTRUSION",
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "PID-1048",
+      "domain": "memory",
+      "artifact_type": "process",
+      "normalized_features": {
+        "entity_name": "explorer.exe",
+        "path": "C:\\Windows\\explorer.exe",
+        "pid": 1048,
+        "ppid": 1000
+      },
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "CreateTime",
+      "provenance": {
+        "file_path": "memory/processes.json",
+        "evidence_id": "EVID-MEM-001",
+        "extractor_name": "Volatility3 windows.pslist",
+        "record_locator": "line:42",
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PID-2048",
+      "domain": "memory",
+      "artifact_type": "process",
+      "normalized_features": {
+        "entity_name": "powershell.exe",
+        "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "pid": 2048,
+        "ppid": 1048
+      },
+      "timestamp": "2026-09-20T08:00:15Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "CreateTime",
+      "provenance": {
+        "file_path": "memory/processes.json",
+        "evidence_id": "EVID-MEM-001",
+        "extractor_name": "Volatility3 windows.pslist",
+        "record_locator": "line:55",
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 15.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET",
+      "clock_skew_risk": "NONE_SAME_SYSTEM",
+      "time_window_valid": true
+    },
+    "shared_entities": {
+      "shared_pid": false,
+      "shared_process_name": false,
+      "shared_path": false,
+      "shared_ip": false,
+      "shared_user": true,
+      "shared_hash": false,
+      "identifiers_list": ["PPID-1048", "USER-CORP\\analyst"]
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Direct parent-child process relationship verified via kernel EPROCESS tree. Explorer launched powershell.exe with verified PPID linkage.",
+      "annotation_source": "EMULATION_LOG",
+      "annotator_ids": ["SYNTH_EXAMINER_01", "SYNTH_EXAMINER_02"],
+      "adjudication_status": "CONSENSUS_VERIFIED",
+      "annotator_confidence": 1.0,
+      "mitre_attack_techniques": ["T1059.001"]
+    },
+    "split": "TRAIN"
+  },
+  {
+    "sample_id": "PAIR-POS-00000002",
+    "investigation_id": "SYNTH_CASE_ALPHA",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "os_version": "Windows 10",
+      "environment_type": "ENTERPRISE_WORKSTATION",
+      "scenario_type": "APT_INTRUSION",
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "RUNKEY-MalUpdate",
+      "domain": "registry",
+      "artifact_type": "run_key",
+      "normalized_features": {
+        "entity_name": "MalUpdate",
+        "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "extra_attributes": {
+          "command": "C:\\Users\\analyst\\AppData\\Local\\beacon.exe"
+        }
+      },
+      "timestamp": "2026-09-20T07:55:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "LastWriteTime",
+      "provenance": {
+        "file_path": "registry/run_keys.json",
+        "evidence_id": "EVID-REG-001",
+        "extractor_name": "RegistryParser",
+        "record_locator": "key:Run/MalUpdate",
+        "storage_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PREFETCH-BEACON",
+      "domain": "disk",
+      "artifact_type": "prefetch",
+      "normalized_features": {
+        "entity_name": "BEACON.EXE",
+        "path": "C:\\Users\\analyst\\AppData\\Local\\beacon.exe"
+      },
+      "timestamp": "2026-09-20T08:05:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "last_run_time",
+      "provenance": {
+        "file_path": "disk/prefetch.json",
+        "evidence_id": "EVID-DISK-001",
+        "extractor_name": "PrefetchParser",
+        "record_locator": "file:BEACON.EXE-38FA92.pf",
+        "storage_hash": "b2c3d4e5f6a10718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 600.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET",
+      "clock_skew_risk": "NONE_SAME_SYSTEM",
+      "time_window_valid": true
+    },
+    "shared_entities": {
+      "shared_pid": false,
+      "shared_process_name": true,
+      "shared_path": true,
+      "shared_ip": false,
+      "shared_user": false,
+      "shared_hash": false,
+      "identifiers_list": ["PATH-C:\\Users\\analyst\\AppData\\Local\\beacon.exe"]
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PERSISTENCE_TO_EXECUTION",
+      "label_rationale": "Registry persistence path matches binary executed in Prefetch. Cross-domain causal persistence-to-execution link verified.",
+      "annotation_source": "HUMAN_EXPERT",
+      "annotator_ids": ["SYNTH_EXAMINER_01", "SYNTH_EXAMINER_02"],
+      "adjudication_status": "CONSENSUS_VERIFIED",
+      "annotator_confidence": 0.98,
+      "mitre_attack_techniques": ["T1547.001", "T1059"]
+    },
+    "split": "TRAIN"
+  },
+  {
+    "sample_id": "PAIR-NEG-00000001",
+    "investigation_id": "SYNTH_CASE_ALPHA",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "os_version": "Windows 10",
+      "environment_type": "ENTERPRISE_WORKSTATION",
+      "scenario_type": "APT_INTRUSION",
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "USB-DEV-KINGSTON-01",
+      "domain": "registry",
+      "artifact_type": "usb_event",
+      "normalized_features": {
+        "entity_name": "Kingston DataTraveler 3.0",
+        "path": "SYSTEM\\CurrentControlSet\\Enum\\USBSTOR"
+      },
+      "timestamp": "2026-09-20T07:30:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "last_connected",
+      "provenance": {
+        "file_path": "registry/usb_devices.json",
+        "evidence_id": "EVID-REG-001",
+        "extractor_name": "RegistryUSBParser",
+        "record_locator": "serial:0014D12B89",
+        "storage_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PREFETCH-VMTOOLS",
+      "domain": "disk",
+      "artifact_type": "prefetch",
+      "normalized_features": {
+        "entity_name": "VMTOOLSD.EXE",
+        "path": "C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe"
+      },
+      "timestamp": "2026-09-20T07:32:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "last_run_time",
+      "provenance": {
+        "file_path": "disk/prefetch.json",
+        "evidence_id": "EVID-DISK-001",
+        "extractor_name": "PrefetchParser",
+        "record_locator": "file:VMTOOLSD.EXE-0489A1.pf",
+        "storage_hash": "b2c3d4e5f6a10718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 120.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET",
+      "clock_skew_risk": "NONE_SAME_SYSTEM",
+      "time_window_valid": true
+    },
+    "shared_entities": {
+      "shared_pid": false,
+      "shared_process_name": false,
+      "shared_path": false,
+      "shared_ip": false,
+      "shared_user": false,
+      "shared_hash": false,
+      "identifiers_list": []
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_NEGATIVE",
+      "ground_truth_causal_label": 0,
+      "relationship_type": "COINCIDENTAL_NOISE",
+      "label_rationale": "Hardware USB insertion recorded, but vmtoolsd.exe executed from local fixed volume C:. Zero volume or path nexus exists. Epistemic classification is coincidental noise.",
+      "annotation_source": "HUMAN_EXPERT",
+      "annotator_ids": ["SYNTH_EXAMINER_01"],
+      "adjudication_status": "SINGLE_REVIEWER",
+      "annotator_confidence": 0.95,
+      "mitre_attack_techniques": []
+    },
+    "split": "TRAIN"
+  },
+  {
+    "sample_id": "PAIR-NEG-00000002",
+    "investigation_id": "SYNTH_CASE_ALPHA",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "os_version": "Windows 10",
+      "environment_type": "ENTERPRISE_WORKSTATION",
+      "scenario_type": "APT_INTRUSION",
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "PID-500",
+      "domain": "memory",
+      "artifact_type": "process",
+      "normalized_features": {
+        "entity_name": "services.exe",
+        "path": "C:\\Windows\\System32\\services.exe",
+        "pid": 500,
+        "ppid": 400
+      },
+      "timestamp": "2026-09-20T07:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "CreateTime",
+      "provenance": {
+        "file_path": "memory/processes.json",
+        "evidence_id": "EVID-MEM-001",
+        "extractor_name": "Volatility3 windows.pslist",
+        "record_locator": "line:12",
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PID-3100",
+      "domain": "memory",
+      "artifact_type": "process",
+      "normalized_features": {
+        "entity_name": "notepad.exe",
+        "path": "C:\\Windows\\System32\\notepad.exe",
+        "pid": 3100,
+        "ppid": 1048
+      },
+      "timestamp": "2026-09-20T08:10:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "CreateTime",
+      "provenance": {
+        "file_path": "memory/processes.json",
+        "evidence_id": "EVID-MEM-001",
+        "extractor_name": "Volatility3 windows.pslist",
+        "record_locator": "line:88",
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 4200.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET",
+      "clock_skew_risk": "NONE_SAME_SYSTEM",
+      "time_window_valid": true
+    },
+    "shared_entities": {
+      "shared_pid": false,
+      "shared_process_name": false,
+      "shared_path": false,
+      "shared_ip": false,
+      "shared_user": false,
+      "shared_hash": false,
+      "identifiers_list": []
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_NEGATIVE",
+      "ground_truth_causal_label": 0,
+      "relationship_type": "COINCIDENTAL_NOISE",
+      "label_rationale": "Services.exe and Notepad.exe operate in completely separate session contexts and parentage hierarchies. Proven intra-domain negative distractor.",
+      "annotation_source": "HUMAN_EXPERT",
+      "annotator_ids": ["SYNTH_EXAMINER_01", "SYNTH_EXAMINER_02"],
+      "adjudication_status": "CONSENSUS_VERIFIED",
+      "annotator_confidence": 1.0,
+      "mitre_attack_techniques": []
+    },
+    "split": "TRAIN"
+  },
+  {
+    "sample_id": "PAIR-AMB-00000001",
+    "investigation_id": "SYNTH_CASE_BETA",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "os_version": "Windows 10",
+      "environment_type": "ENTERPRISE_WORKSTATION",
+      "scenario_type": "APT_INTRUSION",
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "VAD-ALLOC-0x7FFE0000",
+      "domain": "memory",
+      "artifact_type": "vad_memory",
+      "normalized_features": {
+        "entity_name": "svchost.exe",
+        "pid": 1120,
+        "extra_attributes": {
+          "protection": "PAGE_EXECUTE_READWRITE",
+          "tag": "VadS"
+        }
+      },
+      "timestamp": null,
+      "timestamp_quality": "UNRECORDED",
+      "timestamp_source": null,
+      "provenance": {
+        "file_path": "memory/threat_hunting.json",
+        "evidence_id": "EVID-MEM-002",
+        "extractor_name": "Volatility3 windows.malfind",
+        "record_locator": "offset:0x7ffe0000",
+        "storage_hash": "c3d4e5f6a1b20718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "NET-FLOW-198.51.100.99",
+      "domain": "network",
+      "artifact_type": "tcp_flow",
+      "normalized_features": {
+        "entity_name": "198.51.100.99",
+        "ip": "198.51.100.99",
+        "port": 443
+      },
+      "timestamp": "2026-09-20T08:22:10Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "timestamp_source": "frame_time_epoch",
+      "provenance": {
+        "file_path": "pcap/connections.json",
+        "evidence_id": "EVID-PCAP-002",
+        "extractor_name": "PcapExtractor",
+        "record_locator": "flow:192.168.1.100:49210->198.51.100.99:443",
+        "storage_hash": "d4e5f6a1b2c30718293a4b5c6d7e8f901234567890abcdef1234567890abcdef"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": null,
+      "temporal_order": "UNKNOWN",
+      "clock_skew_risk": "POSSIBLE_MULTI_HOST",
+      "time_window_valid": true
+    },
+    "shared_entities": {
+      "shared_pid": false,
+      "shared_process_name": false,
+      "shared_path": false,
+      "shared_ip": false,
+      "shared_user": false,
+      "shared_hash": false,
+      "identifiers_list": []
+    },
+    "annotation": {
+      "epistemic_label": "AMBIGUOUS_UNRESOLVED",
+      "ground_truth_causal_label": null,
+      "relationship_type": "PROCESS_INJECTION",
+      "label_rationale": "RWX allocation observed in svchost.exe memory, and outbound encrypted flow occurred near acquisition. However, precise allocation timestamp was unrecorded in VAD structure, leaving causality unproven. Excluded from binary supervisory loss.",
+      "annotation_source": "CONSENSUS",
+      "annotator_ids": ["SYNTH_EXAMINER_01", "SYNTH_EXAMINER_02"],
+      "adjudication_status": "CONSENSUS_VERIFIED",
+      "annotator_confidence": 0.50,
+      "mitre_attack_techniques": ["T1055"]
+    },
+    "split": "VALIDATION"
+  }
+]

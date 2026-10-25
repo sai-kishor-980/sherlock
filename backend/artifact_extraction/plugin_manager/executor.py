@@ -1,6 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
+from registry import PluginRegistry
+
+
 class PluginExecutor:
 
     def __init__(self, adapters):
@@ -8,9 +11,10 @@ class PluginExecutor:
 
     def execute_one(self, evidence):
 
-        evidence_type = evidence.evidence_type
+        raw_type = evidence.evidence_type or ""
+        evidence_type = PluginRegistry.canonicalize(raw_type) or str(raw_type).lower()
 
-        adapter = self.adapters.get(evidence_type)
+        adapter = self.adapters.get(evidence_type) or self.adapters.get(str(raw_type).lower())
 
         if adapter is None:
 
@@ -19,7 +23,7 @@ class PluginExecutor:
                 "name": evidence.name,
                 "type": evidence_type,
                 "status": "FAILED",
-                "message": f"No adapter available for {evidence_type}"
+                "message": f"No adapter available for {evidence_type} (raw: {raw_type})"
             }
 
         try:

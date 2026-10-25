@@ -44,6 +44,7 @@ class UserRepository:
         user = db.query(User).filter(User.user_id == user_id).first()
         if user:
             user.hashed_password = hashed_password
+            user.token_version = (getattr(user, "token_version", 1) or 1) + 1
             db.commit()
             db.refresh(user)
         return user
@@ -53,6 +54,7 @@ class UserRepository:
         user = db.query(User).filter(User.user_id == user_id).first()
         if user:
             user.role = new_role
+            user.token_version = (getattr(user, "token_version", 1) or 1) + 1
             db.commit()
             db.refresh(user)
         return user

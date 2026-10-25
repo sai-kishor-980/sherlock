@@ -7,6 +7,7 @@ centralized exception handlers, and API route registrations.
 """
 
 import os
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse, FileResponse
@@ -37,6 +38,14 @@ def ensure_db_migrations():
                     cursor.execute("ALTER TABLE cases ADD COLUMN deletion_reason TEXT")
                 if "deletion_requested_by" not in cols:
                     cursor.execute("ALTER TABLE cases ADD COLUMN deletion_requested_by TEXT")
+                if "vault_status" not in cols:
+                    cursor.execute("ALTER TABLE cases ADD COLUMN vault_status TEXT DEFAULT 'OPEN'")
+                if "vault_locked_at" not in cols:
+                    cursor.execute("ALTER TABLE cases ADD COLUMN vault_locked_at TIMESTAMP")
+                if "vault_locked_by" not in cols:
+                    cursor.execute("ALTER TABLE cases ADD COLUMN vault_locked_by TEXT")
+                if "vault_unlock_reason" not in cols:
+                    cursor.execute("ALTER TABLE cases ADD COLUMN vault_unlock_reason TEXT")
                 conn.commit()
             conn.close()
         except Exception as e:
@@ -68,10 +77,14 @@ async def lifespan(app: FastAPI):
             ("Bharath_TES1", "RAM Memory Forensic Scan (Cridex)", "Investigator 01", "Volatile memory dump inspection with Volatility 3, pslist, and malfind detections.", "Critical"),
             ("DISK_1", "Windows Disk Artifact Analysis", "Investigator 01", "Forensic extraction of Windows Registry, Prefetch, USB devices, and MFT records.", "High")
         ]
+        from app.services.rbac_service import RBACService
+        inv_user = db.query(User).filter(User.username == "investigator1").first()
         for c_id, c_name, c_inv, c_desc, c_prio in sample_cases:
             existing = db.query(Case).filter(Case.case_id == c_id).first()
             if not existing:
                 db.add(Case(case_id=c_id, case_name=c_name, investigator_name=c_inv, description=c_desc, priority=c_prio, status="Active"))
+            if inv_user:
+                RBACService.assign_case_creator(db=db, case_id=c_id, user_id=inv_user.user_id)
         db.commit()
     except Exception as e:
         log_error_event(f"Error seeding default application accounts: {str(e)}")
@@ -158,11 +171,14 @@ def create_app() -> FastAPI:
             return FileResponse(jpg_logo, media_type="image/jpeg")
         return JSONResponse(status_code=404, content={"detail": "Logo asset not found"})
 
-    # Robust resolution of frontend directory
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    frontend_dir = os.path.abspath(os.path.join(base_dir, "..", "frontend"))
-    if not os.path.exists(frontend_dir):
-        frontend_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "..", "frontend"))
+    # Robust resolution of frontend directory (with PyInstaller frozen bundle support)
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        frontend_dir = os.path.abspath(os.path.join(sys._MEIPASS, "frontend"))
+    else:
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        frontend_dir = os.path.abspath(os.path.join(base_dir, "..", "frontend"))
+        if not os.path.exists(frontend_dir):
+            frontend_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "..", "frontend"))
 
     # Bulletproof Frontend Web UI Routes for /ui, /ui/, /ui/index.html & assets
     @app.get("/ui", include_in_schema=False)

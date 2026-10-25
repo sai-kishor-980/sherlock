@@ -1,0 +1,9 @@
+{
+  "source_url": "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json",
+  "retrieval_date": "2026-10-22T18:17:17.353985+00:00",
+  "stix_version": "2.1",
+  "attack_version": "20.0",
+  "file_size_bytes": 55271014,
+  "sha256_hash": "81113ba98afa2928f3dcff62022539f7ce30c315c32e14422f11ff95ce534352",
+  "total_stix_objects": 26690
+}

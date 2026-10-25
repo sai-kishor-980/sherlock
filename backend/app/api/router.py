@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.routes import (
     auth, cases, upload, integrity, evidence, events,
-    hashing, encryption, verification, custody, preservation, analysis
+    hashing, encryption, verification, custody, preservation, analysis, audit
 )
 
 api_router = APIRouter()
@@ -18,4 +18,5 @@ api_router.include_router(verification.router, prefix="/verification", tags=["Mu
 api_router.include_router(custody.router, prefix="/custody", tags=["Chain of Custody"])
 api_router.include_router(preservation.router, prefix="/preservation", tags=["Evidence Preservation Layer"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["Real-time Forensic Analysis"])
+api_router.include_router(audit.router, prefix="/audit", tags=["System Audit Logs"])
 

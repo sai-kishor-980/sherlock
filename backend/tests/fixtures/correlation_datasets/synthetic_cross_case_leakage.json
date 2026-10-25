@@ -1,0 +1,84 @@
+[
+  {
+    "sample_id": "PAIR-XCASE-001",
+    "investigation_id": "SYNTH_CASE_111",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PID-500",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "provenance": {
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "record_locator": "offset:5000"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PID-600",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "provenance": {
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "record_locator": "offset:6000"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Valid pair in case 111 assigned to TRAIN split.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_01"]
+    },
+    "split": "TRAIN"
+  },
+  {
+    "sample_id": "PAIR-XCASE-002",
+    "investigation_id": "SYNTH_CASE_222",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PID-500",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "provenance": {
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "record_locator": "offset:5000"
+      }
+    },
+    "target_artifact": {
+      "artifact_id": "PID-600",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN",
+      "provenance": {
+        "storage_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "record_locator": "offset:6000"
+      }
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Exact same artifact pair copied into case 222 assigned to TEST split. Causes artifact-level cross-split leakage.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_01"]
+    },
+    "split": "TEST"
+  }
+]

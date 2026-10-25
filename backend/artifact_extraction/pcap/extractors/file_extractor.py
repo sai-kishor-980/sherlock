@@ -28,7 +28,7 @@ class FileExtractor(BasePCAPExtractor):
 
         carved_files = []
         try:
-            packets = rdpcap(str(self.pcap_path))
+            packets = self.get_packets()
             file_counter = 0
 
             for pkt in packets:

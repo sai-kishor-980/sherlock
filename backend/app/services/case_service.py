@@ -1,5 +1,6 @@
 import os
 import shutil
+import uuid
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.db.models import Case, Evidence
@@ -13,7 +14,9 @@ from app.utils.file_utils import sanitize_filename
 class CaseService:
     @staticmethod
     def create_case(db: Session, case_in: CaseCreate) -> Case:
+        case_id_val = getattr(case_in, "case_id", None) or f"CASE_{uuid.uuid4().hex[:8]}"
         new_case = Case(
+            case_id=case_id_val,
             case_name=case_in.case_name,
             investigator_name=case_in.investigator_name,
             description=case_in.description,

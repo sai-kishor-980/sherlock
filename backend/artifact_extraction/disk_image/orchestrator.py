@@ -1,5 +1,15 @@
 import argparse
+import sys
 from pathlib import Path
+
+_ORCHESTRATOR_DIR = str(Path(__file__).resolve().parent)
+if _ORCHESTRATOR_DIR not in sys.path:
+    sys.path.insert(0, _ORCHESTRATOR_DIR)
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 from collector import Collector
 from merger import Merger
@@ -10,6 +20,7 @@ from core.partition_extractor import PartitionExtractor
 from core.filesystem import FileSystem
 from core.user_discovery import UserDiscovery
 from plugin_loader import PluginLoader
+from extractors.filesystem.extractor import FilesystemExtractor
 from extractors.registry.extractor import RegistryExtractor
 from extractors.browser.extractor import BrowserExtractor
 from extractors.eventlog.extractor import EventLogExtractor
@@ -67,7 +78,7 @@ def main():
             return
 
         # -------------------------------------
-        # Process each Windows partition
+        # Process each partition
         # -------------------------------------
 
         for partition in partitions:
@@ -79,15 +90,21 @@ def main():
                 print(f"Skipping partition {partition.start}: {e}")
                 continue
 
-            # Skip non-Windows partitions
-            if not fs.exists("/Windows"):
-                continue
+            desc_str = (
+                partition.desc.decode("utf-8", errors="replace")
+                if isinstance(partition.desc, bytes)
+                else str(partition.desc)
+            )
+            print(f"\nPartition Found (Start Sector: {partition.start}, Type: {desc_str})")
 
-            print(f"\nWindows Partition Found (Start Sector: {partition.start})")
-
-            users = UserDiscovery(fs).get_users()
-
-            print(f"Users Found : {users}")
+            is_windows = fs.exists("/Windows")
+            if is_windows:
+                print("Windows OS installation detected.")
+                users = UserDiscovery(fs).get_users()
+                print(f"Users Found : {users}")
+            else:
+                print("Storage volume / non-Windows partition detected.")
+                users = []
 
             context = ExtractionContext(
                 filesystem=fs,
@@ -96,13 +113,15 @@ def main():
                 users=users,
                 output_dir=args.output,
                 image_name=Path(args.image).name
-                )
+            )
 
             loader = PluginLoader()
-
             extractors = loader.load(context)
 
             for extractor in extractors:
+                # If not a Windows partition, skip Windows-specific extractors but always run FilesystemExtractor
+                if not is_windows and extractor.__class__.__name__ != "FilesystemExtractor":
+                    continue
 
                 try:
                     result = extractor.extract()

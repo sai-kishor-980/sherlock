@@ -1,0 +1,31 @@
+[
+  {
+    "sample_id": "PAIR-INV-001",
+    "investigation_id": "SYNTH_CASE_ERR",
+    "schema_version": "1.0.0",
+    "case_metadata": {
+      "synthetic_fixture": true
+    },
+    "source_artifact": {
+      "artifact_id": "PID-999",
+      "domain": "quantum_memory_invalid_domain",
+      "artifact_type": "process"
+    },
+    "target_artifact": {
+      "artifact_id": "PID-999",
+      "domain": "quantum_memory_invalid_domain",
+      "artifact_type": "process"
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "TARGET_PRECEDES_SOURCE"
+    },
+    "annotation": {
+      "epistemic_label": "NOT_AN_EPISTEMIC_LABEL",
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Short",
+      "annotation_source": "TEST",
+      "annotator_ids": []
+    }
+  }
+]

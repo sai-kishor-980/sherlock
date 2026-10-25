@@ -20,7 +20,7 @@ ALLOWED_EXTENSIONS: Set[str] = {
     # Memory & Virtual Machine Images
     ".dmp", ".mem", ".vmem", ".crash", ".vmdk", ".vhd", ".vhdx", ".vdi", ".qcow2",
     # System Artifacts, Registry & Network Traffic
-    ".evtx", ".pcap", ".pcapng", ".dat", ".hive", ".db", ".sqlite", ".sqlite3", ".log",
+    ".evtx", ".pcap", ".pcapng", ".dat", ".hive", ".db", ".sqlite", ".sqlite3", ".log", ".pf", ".lnk",
     # Images & Media
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff",
     ".mp3", ".wav", ".aac", ".mp4", ".avi", ".mov", ".mkv", ".flv",

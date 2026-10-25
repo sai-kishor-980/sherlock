@@ -1,0 +1,66 @@
+[
+  {
+    "sample_id": "PAIR-SYM-001",
+    "investigation_id": "SYNTH_CASE_SYM",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "USB-A",
+      "domain": "registry",
+      "artifact_type": "usb_event",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "target_artifact": {
+      "artifact_id": "PREFETCH-B",
+      "domain": "disk",
+      "artifact_type": "prefetch",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_NEGATIVE",
+      "ground_truth_causal_label": 0,
+      "relationship_type": "COINCIDENTAL_NOISE",
+      "label_rationale": "Symmetric coincidental noise test pair forward.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_01"]
+    }
+  },
+  {
+    "sample_id": "PAIR-SYM-002",
+    "investigation_id": "SYNTH_CASE_SYM",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PREFETCH-B",
+      "domain": "disk",
+      "artifact_type": "prefetch",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "target_artifact": {
+      "artifact_id": "USB-A",
+      "domain": "registry",
+      "artifact_type": "usb_event",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "temporal_context": {
+      "delta_seconds": -10.0,
+      "temporal_order": "TARGET_PRECEDES_SOURCE"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_NEGATIVE",
+      "ground_truth_causal_label": 0,
+      "relationship_type": "COINCIDENTAL_NOISE",
+      "label_rationale": "Symmetric coincidental noise test pair reversed (B <-> A). Must be detected as duplicate.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_01"]
+    }
+  }
+]

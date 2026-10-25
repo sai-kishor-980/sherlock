@@ -37,6 +37,7 @@ class PCAPAdapter:
 
         result = subprocess.run(
             command,
+            cwd=str(orchestrator.parent),
             capture_output=True,
             text=True
         )
@@ -48,8 +49,18 @@ class PCAPAdapter:
                 "name": evidence.name,
                 "type": "pcap",
                 "status": "FAILED",
-                "message": result.stderr
+                "message": result.stderr or result.stdout
             }
+
+        # Synchronize generated network contracts into extracted_artifacts/network/
+        try:
+            import shutil
+            network_dir = self.case_output / "extracted_artifacts" / "network"
+            network_dir.mkdir(parents=True, exist_ok=True)
+            for jf in output_dir.glob("*.json"):
+                shutil.copy2(jf, network_dir / jf.name)
+        except Exception:
+            pass
 
         return {
             "evidence_id": evidence.evidence_id,

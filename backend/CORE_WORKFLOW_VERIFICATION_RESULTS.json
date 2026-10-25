@@ -1,0 +1,338 @@
+{
+  "phases": {
+    "B1_case_creation": {
+      "status": "VERIFIED",
+      "case_id": "CASE_E2E_8D17D7",
+      "investigator": "lead_investigator_e2e",
+      "vault_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7"
+    },
+    "B2_evidence_upload": {
+      "status": "VERIFIED",
+      "items": [
+        {
+          "evidence_id": "bc9f5194-02b2-4c1c-92f1-8c753ebaa25c",
+          "filename": "SAM",
+          "size": 262144,
+          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7\\Registry\\SAM"
+        },
+        {
+          "evidence_id": "85a5f73a-9082-4c1f-ba80-778780c0221d",
+          "filename": "VMWARETRAY.EXE-029F476F.pf",
+          "size": 14306,
+          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7\\Disk\\VMWARETRAY.EXE-029F476F.pf"
+        }
+      ]
+    },
+    "B3_vault_hashing": {
+      "status": "VERIFIED",
+      "sam_sha256": "db2d48497937dc6a18c2d763fe66e1bb8750d371cef778deafb5a11923664372",
+      "prefetch_sha256": "b5d619e16fe3aee86d1b2c5c456181e87d40af62fc397c054268778b2f60f706",
+      "integrity_match": true
+    },
+    "B4_artifact_extraction": {
+      "status": "VERIFIED",
+      "registry_files": [
+        "registry_summary.json"
+      ],
+      "prefetch_files": [
+        "prefetch_analysis.json",
+        "prefetch_summary.json"
+      ],
+      "case_output_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7"
+    },
+    "B5_contract_validation": {
+      "status": "VERIFIED",
+      "prefetch_executable": "VMWARETRAY.EXE",
+      "prefetch_run_count": 10,
+      "registry_summary": {
+        "artifact": "Windows Registry",
+        "status": "NO_ARTIFACTS",
+        "parser": {
+          "library": "regipy",
+          "available": true
+        },
+        "statistics": {
+          "hives_found": 1,
+          "hives_processed": 0,
+          "installed_software": 0,
+          "usb_devices": 0,
+          "run_keys": 0,
+          "recent_files": 0,
+          "errors": 0
+        },
+        "capabilities": {
+          "installed_software": true,
+          "usb_devices": true,
+          "persistence_run_keys": true,
+          "recent_documents": true,
+          "user_hive_analysis": true,
+          "system_hive_analysis": true,
+          "amcache_analysis": false,
+          "shellbags_analysis": false,
+          "userassist_analysis": false,
+          "bam_analysis": false,
+          "services_analysis": false
+        }
+      }
+    },
+    "B6_supervisor_routing": {
+      "status": "VERIFIED",
+      "total_artifacts": 17,
+      "active_agents": {
+        "network": {
+          "agent": "Network Agent",
+          "lead": "Pranay",
+          "total_expected": 9,
+          "extracted_count": 0,
+          "status": "READY",
+          "files": []
+        },
+        "memory": {
+          "agent": "Memory Agent",
+          "lead": "Bharath",
+          "total_expected": 11,
+          "extracted_count": 0,
+          "status": "READY",
+          "files": []
+        },
+        "disk": {
+          "agent": "Disk Agent",
+          "lead": "Aswith",
+          "total_expected": 11,
+          "extracted_count": 11,
+          "status": "COMPLETED",
+          "files": [
+            {
+              "filename": "mft_analysis.json",
+              "rel_path": "extracted_artifacts/disk/mft_analysis.json",
+              "file_size": 438,
+              "size_formatted": "438 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "mft_summary.json",
+              "rel_path": "extracted_artifacts/disk/mft_summary.json",
+              "file_size": 436,
+              "size_formatted": "436 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "lnk_analysis.json",
+              "rel_path": "extracted_artifacts/disk/lnk_analysis.json",
+              "file_size": 438,
+              "size_formatted": "438 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "lnk_summary.json",
+              "rel_path": "extracted_artifacts/disk/lnk_summary.json",
+              "file_size": 436,
+              "size_formatted": "436 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "prefetch_analysis.json",
+              "rel_path": "extracted_artifacts/disk/prefetch_analysis.json",
+              "file_size": 6417,
+              "size_formatted": "6.3 KB",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "prefetch_summary.json",
+              "rel_path": "extracted_artifacts/disk/prefetch_summary.json",
+              "file_size": 831,
+              "size_formatted": "831 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "recyclebin_analysis.json",
+              "rel_path": "extracted_artifacts/disk/recyclebin_analysis.json",
+              "file_size": 452,
+              "size_formatted": "452 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "recyclebin_summary.json",
+              "rel_path": "extracted_artifacts/disk/recyclebin_summary.json",
+              "file_size": 450,
+              "size_formatted": "450 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "jumplist_automatic.json",
+              "rel_path": "extracted_artifacts/disk/jumplist_automatic.json",
+              "file_size": 450,
+              "size_formatted": "450 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "jumplist_custom.json",
+              "rel_path": "extracted_artifacts/disk/jumplist_custom.json",
+              "file_size": 444,
+              "size_formatted": "444 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "jumplist_summary.json",
+              "rel_path": "extracted_artifacts/disk/jumplist_summary.json",
+              "file_size": 446,
+              "size_formatted": "446 B",
+              "status": "EXTRACTED"
+            }
+          ]
+        },
+        "logs": {
+          "agent": "Log Agent",
+          "lead": "Sanhith",
+          "total_expected": 6,
+          "extracted_count": 0,
+          "status": "READY",
+          "files": []
+        },
+        "registry": {
+          "agent": "Registry Agent",
+          "lead": "Kishor",
+          "total_expected": 6,
+          "extracted_count": 6,
+          "status": "COMPLETED",
+          "files": [
+            {
+              "filename": "installed_software.json",
+              "rel_path": "extracted_artifacts/registry/installed_software.json",
+              "file_size": 431,
+              "size_formatted": "431 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "usb_devices.json",
+              "rel_path": "extracted_artifacts/registry/usb_devices.json",
+              "file_size": 417,
+              "size_formatted": "417 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "run_keys.json",
+              "rel_path": "extracted_artifacts/registry/run_keys.json",
+              "file_size": 411,
+              "size_formatted": "411 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "recent_files.json",
+              "rel_path": "extracted_artifacts/registry/recent_files.json",
+              "file_size": 419,
+              "size_formatted": "419 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "registry_summary.json",
+              "rel_path": "extracted_artifacts/registry/registry_summary.json",
+              "file_size": 803,
+              "size_formatted": "803 B",
+              "status": "EXTRACTED"
+            },
+            {
+              "filename": "registry_errors.json",
+              "rel_path": "extracted_artifacts/registry/registry_errors.json",
+              "file_size": 425,
+              "size_formatted": "425 B",
+              "status": "EXTRACTED"
+            }
+          ]
+        }
+      }
+    },
+    "B7_domain_agents": {
+      "status": "VERIFIED",
+      "registry_agent": {
+        "domain": "registry",
+        "agent": "Registry Agent",
+        "team_member": "Kishor",
+        "evidence_type": "Registry Hive",
+        "classification": "BENIGN",
+        "risk_level": "LOW",
+        "reasoning": "The Registry Agent (Kishor) examined the extracted Registry Hive artifacts. No overt persistence or malicious execution patterns identified in this artifact.",
+        "key_evidence": [
+          "Baseline operational activity observed."
+        ],
+        "adapter_model": "registry_adapter",
+        "contract_validated": true,
+        "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+      },
+      "disk_agent": {
+        "domain": "disk",
+        "agent": "Disk Agent",
+        "team_member": "Aswith",
+        "evidence_type": "Prefetch Execution Record",
+        "classification": "BENIGN",
+        "risk_level": "LOW",
+        "reasoning": "The Disk Agent (Aswith) examined the extracted Prefetch Execution Record artifacts. No overt persistence or malicious execution patterns identified in this artifact.",
+        "key_evidence": [
+          "Baseline operational activity observed."
+        ],
+        "adapter_model": "disk_adapter",
+        "contract_validated": true,
+        "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+      }
+    },
+    "B8_synthesis_and_persistence": {
+      "status": "VERIFIED",
+      "findings_count": 1,
+      "timeline_count": 1,
+      "correlations_count": 0,
+      "sis_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7\\sis_state.json",
+      "report_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7\\synthesized_report.json"
+    },
+    "C_routing_correctness": {
+      "status": "VERIFIED",
+      "accounting": {
+        "network": {
+          "agent": "Network Agent",
+          "lead": "Pranay",
+          "status": "SKIPPED",
+          "reason": "No PCAP or network capture evidence ingested for this test slice."
+        },
+        "memory": {
+          "agent": "Memory Agent",
+          "lead": "Bharath",
+          "status": "SKIPPED",
+          "reason": "No raw RAM dump ingested for this test slice."
+        },
+        "disk": {
+          "agent": "Disk Agent",
+          "lead": "Aswith",
+          "status": "EXECUTED",
+          "source_evidence": "VMWARETRAY.EXE-029F476F.pf",
+          "extractor": "PrefetchAdapter (PrefetchAnalyzer)",
+          "contract": "extracted_artifacts/disk/prefetch_analysis.json",
+          "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+        },
+        "logs": {
+          "agent": "Log Agent",
+          "lead": "Sanhith",
+          "status": "SKIPPED",
+          "reason": "No Windows Event Log (.evtx) ingested for this test slice."
+        },
+        "registry": {
+          "agent": "Registry Agent",
+          "lead": "Kishor",
+          "status": "EXECUTED",
+          "source_evidence": "SAM",
+          "extractor": "RegistryAdapter (RegistryAnalyzer)",
+          "contract": "extracted_artifacts/registry/registry_summary.json",
+          "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+        }
+      }
+    }
+  },
+  "failures": {
+    "D1_unsupported_format": "PASSED",
+    "D2_malformed_zero_byte": "PASSED",
+    "D3_duplicate_upload": "PASSED",
+    "D4_unauthorized_access": "PASSED",
+    "D5_restart_retrieval": "PASSED"
+  },
+  "timings": {
+    "total_seconds": 8.93
+  }
+}

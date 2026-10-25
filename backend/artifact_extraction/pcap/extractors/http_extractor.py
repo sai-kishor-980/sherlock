@@ -22,7 +22,7 @@ class HttpExtractor(BasePCAPExtractor):
 
         http_requests = []
         try:
-            packets = rdpcap(str(self.pcap_path))
+            packets = self.get_packets()
             for pkt in packets:
                 if pkt.haslayer(TCP) and pkt.haslayer(Raw):
                     payload = pkt[Raw].load.decode("utf-8", errors="ignore")

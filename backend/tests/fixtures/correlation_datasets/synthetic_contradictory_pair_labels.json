@@ -1,0 +1,66 @@
+[
+  {
+    "sample_id": "PAIR-CONFLICT-001",
+    "investigation_id": "SYNTH_CASE_CONFLICT",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PID-500",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "target_artifact": {
+      "artifact_id": "PID-600",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Sample 1 claims positive causal parentage.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_01"]
+    }
+  },
+  {
+    "sample_id": "PAIR-CONFLICT-002",
+    "investigation_id": "SYNTH_CASE_CONFLICT",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PID-500",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "target_artifact": {
+      "artifact_id": "PID-600",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_NEGATIVE",
+      "ground_truth_causal_label": 0,
+      "relationship_type": "COINCIDENTAL_NOISE",
+      "label_rationale": "Sample 2 claims exact same pair is negative noise. Direct label contradiction.",
+      "annotation_source": "TEST",
+      "annotator_ids": ["EXAMINER_02"]
+    }
+  }
+]

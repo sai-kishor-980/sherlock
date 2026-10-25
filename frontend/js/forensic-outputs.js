@@ -184,13 +184,29 @@
       card.onmouseover = () => { card.style.background = "rgba(255, 255, 255, 0.05)"; };
       card.onmouseout = () => { card.style.background = "rgba(255, 255, 255, 0.02)"; };
 
-      // Left: Timestamp & Phase
+      const tsUtc = evt.timestamp_utc || evt.timestamp;
+      const tsType = evt.timestamp_type || (tsUtc ? "OBSERVED" : "UNAVAILABLE");
+      const tsSource = evt.timestamp_source || (tsUtc ? "SOURCE_METADATA" : "UNRECORDED");
+
+      let typeBadge = '';
+      if (tsType === "UNAVAILABLE" || !tsUtc) {
+        typeBadge = `<span class="badge" style="font-size: 0.65rem; background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px dashed rgba(148, 163, 184, 0.4);">UNRECORDED (ZERO-FABRICATION)</span>`;
+      } else if (tsType === "ENRICHED_CORROBORATED") {
+        typeBadge = `<span class="badge" style="font-size: 0.65rem; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);" title="${escapeHtml(evt.enrichment_provenance || '')}">ENRICHED: ${escapeHtml(tsSource)}</span>`;
+      } else {
+        typeBadge = `<span class="badge" style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">OBSERVED: ${escapeHtml(tsSource)}</span>`;
+      }
+
+      // Left: Timestamp & Phase & Provenance
       const leftCol = `
         <div>
-          <div class="mono-text" style="font-size: 0.78rem; color: #cbd5e1;">${formatTimestamp(evt.timestamp)}</div>
-          <span class="badge" style="font-size: 0.7rem; margin-top: 0.3rem; display: inline-block; background: rgba(255,255,255,0.06); color: var(--accent-emerald-light);">
-            ${evt.phase || "Execution"}
-          </span>
+          <div class="mono-text" style="font-size: 0.78rem; color: #cbd5e1;">${tsUtc ? formatTimestamp(tsUtc) : "UNAVAILABLE"}</div>
+          <div style="margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.25rem;">
+            ${typeBadge}
+            <span class="badge" style="font-size: 0.68rem; background: rgba(255,255,255,0.06); color: var(--accent-emerald-light);">
+              ${evt.phase || evt.agent || "Execution"}
+            </span>
+          </div>
         </div>
       `;
 
@@ -451,43 +467,186 @@
   }
 
   // -------------------------------------------------------------------------
-  // CORRELATIONS RENDERER
+  // CORRELATIONS RENDERER (HYBRID NEURO-SYMBOLIC WITH SUPERVISOR XAI)
   // -------------------------------------------------------------------------
   function renderCorrelations(correlations) {
     const container = document.getElementById("correlations-list-container");
     if (!container) return;
 
+    const activeCaseId = window.g_currentActiveCaseId || (window.g_currentActiveCase && window.g_currentActiveCase.case_id);
+
+    let html = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; padding-bottom: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.08); flex-wrap: wrap; gap: 0.75rem;">
+        <div>
+          <div style="font-size: 0.95rem; font-weight: 700; color: #fff;">Hybrid Neuro-Symbolic Correlation Matrix</div>
+          <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 0.2rem;">
+            5 Domain Specialists + Deterministic Verification + Remote Supervisor LLM Reasoning
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-trigger-correlation" onclick="window.triggerHybridCorrelation();" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Run Hybrid Correlation Engine
+        </button>
+      </div>
+    `;
+
     if (!correlations || correlations.length === 0) {
-      container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No correlation chains established yet.</div>`;
+      html += `<div style="text-align: center; color: var(--text-muted); padding: 2.5rem; background: rgba(255,255,255,0.01); border: 1px dashed rgba(255,255,255,0.1); border-radius: var(--radius-sm);">
+        <div style="font-size: 1.1rem; margin-bottom: 0.5rem;">🔗 No cross-domain correlations established yet</div>
+        <div style="font-size: 0.84rem; color: #64748b; margin-bottom: 1rem;">Click "Run Hybrid Correlation Engine" above to analyze specialist findings on the remote GPU.</div>
+      </div>`;
+      container.innerHTML = html;
       return;
     }
 
-    container.innerHTML = "";
-    correlations.forEach(c => {
+    container.innerHTML = html;
+
+    correlations.forEach((c, idx) => {
+      const epClass = c.epistemic_class || "CORRELATIONAL_ASSOCIATION";
+      const isHypothesis = Boolean(c.is_model_hypothesis);
+      const conf = c.confidence || 0.85;
+      const uncertainty = c.uncertainty_score !== undefined ? c.uncertainty_score : (1.0 - conf).toFixed(2);
+
+      // Epistemic Visual Theme
+      let borderStyle = "solid 1px rgba(168, 85, 247, 0.4)";
+      let bgStyle = "rgba(168, 85, 247, 0.04)";
+      let badgeHtml = `<span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168,85,247,0.4);">CORRELATIONAL ASSOCIATION</span>`;
+
+      if (epClass === "CAUSAL_DEPENDENCY") {
+        borderStyle = "solid 1.5px rgba(6, 182, 212, 0.6)";
+        bgStyle = "rgba(6, 182, 212, 0.05)";
+        badgeHtml = `<span class="badge" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid rgba(6,182,212,0.5);">CAUSAL DEPENDENCY (PROVEN)</span>`;
+      } else if (isHypothesis || epClass === "AMBIGUOUS_UNKNOWN") {
+        borderStyle = "dashed 1.5px rgba(245, 158, 11, 0.6)";
+        bgStyle = "rgba(245, 158, 11, 0.04)";
+        badgeHtml = `<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.5);">MODEL PROPOSED HYPOTHESIS</span>`;
+      } else if (epClass === "COINCIDENTAL_NOISE") {
+        borderStyle = "dotted 1px rgba(100, 116, 139, 0.4)";
+        bgStyle = "rgba(100, 116, 139, 0.03)";
+        badgeHtml = `<span class="badge" style="background: rgba(100, 116, 139, 0.2); color: #94a3b8;">COINCIDENTAL NOISE</span>`;
+      }
+
       const card = document.createElement("div");
+      card.id = `corr-card-${idx}`;
       card.style.cssText = `
-        padding: 1.1rem;
-        background: rgba(29, 78, 216, 0.04);
-        border: 1px solid rgba(29, 78, 216, 0.25);
+        padding: 1.15rem;
+        background: ${bgStyle};
+        border: ${borderStyle};
         border-radius: var(--radius-sm);
+        margin-bottom: 0.9rem;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
       `;
 
+      const matchedList = Array.isArray(c.matched_entities) ? c.matched_entities.map(e => typeof e === 'object' ? `${e.type || 'entity'}: ${e.value || ''}` : String(e)).join(", ") : (c.matched_entities || "None");
+      const drawerId = `corr-drawer-${idx}`;
+
       card.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.5rem;">
-          <span class="mono-text" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 700;">${c.correlation_id} // ${escapeHtml(c.relationship_type)}</span>
-          <span class="badge badge-emerald">Confidence: ${Math.round((c.confidence || 0.95) * 100)}%</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span class="mono-text" style="font-size: 0.78rem; color: #fff; font-weight: 800;">${escapeHtml(c.correlation_id || `CORR-${idx+1}`)}</span>
+            <span style="color: #64748b;">//</span>
+            <span class="mono-text" style="font-size: 0.78rem; color: #38bdf8;">${escapeHtml(c.relationship_type || "CORRELATED")}</span>
+            <span class="badge" style="font-size: 0.68rem; background: rgba(255,255,255,0.06); color: #94a3b8;">${escapeHtml(c.rule_id || "RULE-XAI")}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            ${badgeHtml}
+            <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 700;">
+              Confidence: ${Math.round(conf * 100)}%
+            </span>
+            <span class="badge" style="background: rgba(239, 68, 68, 0.1); color: #f87171;" title="Heuristic uncertainty rating">
+              Uncertainty: ${uncertainty}
+            </span>
+          </div>
         </div>
-        <h4 style="font-size: 0.98rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem;">${escapeHtml(c.title)}</h4>
-        <p style="font-size: 0.86rem; color: #cbd5e1; line-height: 1.5; margin-bottom: 0.6rem;">
-          ${escapeHtml(c.reasoning)}
+
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; font-size: 0.84rem;">
+          <span class="badge" style="background: rgba(255,255,255,0.08); color: #e2e8f0;"><code class="mono-text">${escapeHtml(c.source_finding_id || "SOURCE")}</code></span>
+          <span style="color: #38bdf8; font-weight: 700;">➔</span>
+          <span class="badge" style="background: rgba(255,255,255,0.08); color: #e2e8f0;"><code class="mono-text">${escapeHtml(c.target_finding_id || "TARGET")}</code></span>
+          ${matchedList ? `<span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">Matched Entities: <strong style="color: #cbd5e1;">${escapeHtml(matchedList)}</strong></span>` : ''}
+        </div>
+
+        <p style="font-size: 0.88rem; color: #e2e8f0; line-height: 1.55; margin-bottom: 0.75rem;">
+          ${escapeHtml(c.reasoning || "Cross-agent correlation established.")}
         </p>
-        <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 1rem; flex-wrap: wrap;">
-          <span>Evidence Chain: <code class="mono-text" style="color: #38bdf8;">${(c.supporting_evidence || []).join(" ➔ ")}</code></span>
+
+        <!-- Toggleable Explainability Drawer -->
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.toggleCorrelationDrawer('${drawerId}');" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; color: #94a3b8;">
+            🔍 Inspect Explainability &amp; Falsifying Criteria
+          </button>
+        </div>
+
+        <div id="${drawerId}" style="display: none; margin-top: 0.85rem; padding: 0.85rem; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-sm); font-size: 0.8rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div>
+              <div style="font-weight: 700; color: #38bdf8; margin-bottom: 0.25rem;">Alternative Explanations:</div>
+              <div style="color: #94a3b8; line-height: 1.4;">${escapeHtml(c.alternative_explanations || "None identified.")}</div>
+            </div>
+            <div>
+              <div style="font-weight: 700; color: #f59e0b; margin-bottom: 0.25rem;">Falsifying / Missing Evidence:</div>
+              <div style="color: #94a3b8; line-height: 1.4;">${escapeHtml(c.missing_evidence || "None required.")}</div>
+            </div>
+          </div>
+          <div style="margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.72rem; color: #64748b;">
+            Verification Status: <strong style="color: ${c.verification_status === 'VERIFIED' ? '#34d399' : '#fbbf24'};">${escapeHtml(c.verification_status || 'VERIFIED')}</strong> |
+            Uncertainty Calibrated: <strong style="color: #cbd5e1;">${escapeHtml(c.uncertainty_label || 'HEURISTIC')}</strong> |
+            Rule Model: <code class="mono-text" style="color: #94a3b8;">${escapeHtml(c.rule_id || 'RULE-XAI')}</code>
+          </div>
         </div>
       `;
       container.appendChild(card);
     });
   }
+
+  // Global drawer toggler
+  window.toggleCorrelationDrawer = function(drawerId) {
+    const el = document.getElementById(drawerId);
+    if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+  };
+
+  // Global trigger for Hybrid Correlation from UI
+  window.triggerHybridCorrelation = async function() {
+    const activeCaseId = window.g_currentActiveCaseId || (window.g_currentActiveCase && window.g_currentActiveCase.case_id);
+    if (!activeCaseId) {
+      if (typeof window.showSherlockNotice === "function") {
+        window.showSherlockNotice("Case Required", "Please select or open an investigation case first.", true);
+      }
+      return;
+    }
+
+    const btn = document.getElementById("btn-trigger-correlation");
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> Running Neuro-Symbolic Correlation...`;
+    }
+
+    try {
+      const res = await HMACFR_API.runCaseCorrelation(activeCaseId, true);
+      if (typeof window.showSherlockNotice === "function") {
+        window.showSherlockNotice("Correlation Succeeded", `Generated ${res.total_correlations} cross-domain edges across ${res.total_findings} findings.`);
+      }
+
+      // Re-fetch forensic data and re-render
+      if (typeof HMACFR_API.getForensicData === "function") {
+        const updated = await HMACFR_API.getForensicData(activeCaseId);
+        window.currentForensicData = updated;
+        if (window.renderForensicOutputs) {
+          window.renderForensicOutputs(updated);
+        }
+      }
+    } catch (err) {
+      console.error("Hybrid correlation error:", err);
+      if (typeof window.showSherlockNotice === "function") {
+        window.showSherlockNotice("Correlation Notice", err.message, true);
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Run Hybrid Correlation Engine`;
+      }
+    }
+  };
 
   // -------------------------------------------------------------------------
   // RECONSTRUCTION RENDERER

@@ -1,6 +1,11 @@
 import json
 import uuid
+import sys
 from pathlib import Path
+
+_PM_DIR = str(Path(__file__).resolve().parent)
+if _PM_DIR not in sys.path:
+    sys.path.insert(0, _PM_DIR)
 
 from models import Evidence, Case
 from detector import EvidenceDetector
@@ -99,16 +104,19 @@ class PluginManager:
                 name = item.get("name", Path(path).name)
                 explicit_id = item.get("evidence_id") or item.get("id")
 
-            if explicit_type:
-                evidence_type = explicit_type
-            else:
-                evidence_type = EvidenceDetector.detect(path)
+            raw_type = explicit_type or EvidenceDetector.detect(path)
+            evidence_type = PluginRegistry.canonicalize(raw_type) or str(raw_type).lower()
 
             if not PluginRegistry.enabled(evidence_type):
-                print(
-                    f"[SKIPPED] Plugin disabled: {evidence_type} for {path}"
-                )
-                continue
+                # Try fallback to detector if explicit type was not a known plugin
+                detected_fallback = EvidenceDetector.detect(path)
+                if detected_fallback and PluginRegistry.enabled(detected_fallback):
+                    evidence_type = PluginRegistry.canonicalize(detected_fallback)
+                else:
+                    print(
+                        f"[SKIPPED] Plugin disabled: {evidence_type} (raw: {raw_type}) for {path}"
+                    )
+                    continue
 
             evidence = Evidence(
                 evidence_id=explicit_id or f"EVD-{index:03d}",

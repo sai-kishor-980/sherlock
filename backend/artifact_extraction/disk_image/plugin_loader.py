@@ -10,9 +10,11 @@ from extractors.lnk.extractor import LnkExtractor
 from extractors.jumplist.extractor import JumpListExtractor
 from extractors.mft.extractor import MFTExtractor
 from extractors.email.extractor import EmailExtractor
+from extractors.filesystem.extractor import FilesystemExtractor
 
 
 EXTRACTOR_MAP = {
+    "FilesystemExtractor": FilesystemExtractor,
     "RegistryExtractor": RegistryExtractor,
     "BrowserExtractor": BrowserExtractor,
     "EventLogExtractor": EventLogExtractor,

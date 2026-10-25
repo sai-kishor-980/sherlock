@@ -22,3 +22,6 @@ requests>=2.31.0
 # HTML, XML & Image Processing
 beautifulsoup4>=4.12.0
 Pillow>=10.0.0
+
+# Graph Database
+neo4j>=5.15.0

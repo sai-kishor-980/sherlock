@@ -13,6 +13,10 @@ class Case(Base):
     description = Column(Text, nullable=True)
     priority = Column(String, default="Medium")  # Low, Medium, High, Critical
     status = Column(String, default="Active")    # Active, Pending, Closed, Archived, PENDING_DELETION
+    vault_status = Column(String, default="OPEN")  # OPEN, LOCKED
+    vault_locked_at = Column(DateTime, nullable=True)
+    vault_locked_by = Column(String, nullable=True)
+    vault_unlock_reason = Column(Text, nullable=True)
     deletion_reason = Column(Text, nullable=True)
     deletion_requested_by = Column(String, nullable=True)
     expected_evidence_count = Column(Integer, nullable=True, default=0)

@@ -48,11 +48,29 @@ class DiskAdapter:
 
         _log_path_boundary("DiskAdapter subprocess image argument", command[2])
 
+        env = dict(**subprocess.os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+
         result = subprocess.run(
             command,
+            cwd=str(disk_orchestrator.parent),
+            env=env,
             capture_output=True,
             text=True
         )
+
+        # Synchronize generated artifacts to extracted_artifacts/disk
+        extracted_artifacts_disk = self.case_output / "extracted_artifacts" / "disk"
+        extracted_artifacts_disk.mkdir(parents=True, exist_ok=True)
+
+        for src_dir in [output_dir / "analyzed", output_dir / "filesystem", output_dir]:
+            if src_dir.exists() and src_dir.is_dir():
+                for json_file in src_dir.glob("*.json"):
+                    dest = extracted_artifacts_disk / json_file.name
+                    if not dest.exists():
+                        import shutil
+                        shutil.copy2(json_file, dest)
 
         if result.returncode != 0:
 

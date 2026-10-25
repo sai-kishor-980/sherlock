@@ -62,7 +62,12 @@ class EvidenceDetector:
         if name_lower.startswith("$i") or name_lower.startswith("$r") or name_lower == "$recycle.bin":
             return "recyclebin"
 
+        if name_lower in ["sam", "system", "software", "security", "ntuser.dat"]:
+            return "registry"
+
         suffix = path.suffix.lower()
+        if suffix in [".reg"]:
+            return "registry"
 
         if suffix in cls.EXTENSION_MAP:
             return cls.EXTENSION_MAP[suffix]

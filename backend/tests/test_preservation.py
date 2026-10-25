@@ -175,7 +175,13 @@ def test_async_preservation_endpoint():
         finally:
             db.close()
 
+    from app.api.dependencies import get_current_user
+    from app.db.models.user import User
+    from app.services.rbac_service import RBACService
+
+    mock_user = User(user_id="U_TEST", username="test_agent", email="test@hmacfr.org", hashed_password="pw", is_active=True, token_version=1)
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: mock_user
     client = TestClient(app)
 
     db = TestingSessionLocal()
@@ -193,8 +199,10 @@ def test_async_preservation_endpoint():
             stored_filename="api_payload.raw", category="Memory", type="BINARY",
             extension=".raw", file_size=len(raw_file.read_bytes()), storage_path=str(raw_file), status="UPLOADED"
         )
+        db.add(mock_user)
         db.add_all([case_obj, ev_obj])
         db.commit()
+        RBACService.assign_case_creator(db, case_id, "U_TEST")
 
         # Call POST /api/v1/evidence/preserve
         payload = {
@@ -248,7 +256,13 @@ def test_batch_preservation_endpoint():
         finally:
             db.close()
 
+    from app.api.dependencies import get_current_user
+    from app.db.models.user import User
+    from app.services.rbac_service import RBACService
+
+    mock_user = User(user_id="U_BATCH", username="batch_agent", email="batch@hmacfr.org", hashed_password="pw", is_active=True, token_version=1)
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: mock_user
     client = TestClient(app)
 
     db = TestingSessionLocal()
@@ -270,8 +284,10 @@ def test_batch_preservation_endpoint():
             evidence_id="EV_B2", case_id=case_id, original_filename="b2.raw", stored_filename="b2.raw",
             category="Memory", type="BINARY", extension=".raw", file_size=12, storage_path=str(f2), status="UPLOADED"
         )
+        db.add(mock_user)
         db.add_all([case_obj, ev1, ev2])
         db.commit()
+        RBACService.assign_case_creator(db, case_id, "U_BATCH")
 
         # Call POST /api/v1/preservation/preserve-case/{case_id}
         response = client.post(f"/api/v1/preservation/preserve-case/{case_id}")

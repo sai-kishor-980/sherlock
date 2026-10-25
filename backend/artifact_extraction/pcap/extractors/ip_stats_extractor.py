@@ -26,7 +26,7 @@ class IpStatsExtractor(BasePCAPExtractor):
         ports = defaultdict(int)
 
         try:
-            packets = rdpcap(str(self.pcap_path))
+            packets = self.get_packets()
             for pkt in packets:
                 pkt_len = len(pkt)
                 src = None

@@ -39,6 +39,9 @@ def main():
         return
 
     context = PCAPContext(pcap_path, args.output)
+    print(f"[*] Reading PCAP packets from {pcap_path.name}...")
+    pkts = context.get_packets()
+    print(f"[+] Loaded {len(pkts)} packets for plugin extraction.")
     collector = PCAPCollector()
 
     # Load enabled plugins from plugins.json

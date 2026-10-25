@@ -20,14 +20,18 @@ from app.db.schemas.user import (
 
 class CaseBase(BaseModel):
     case_name: str
-    investigator_name: str = Field(
-        ...,
+    investigator_name: Optional[str] = Field(
+        default=None,
         validation_alias=AliasChoices('investigator_name', 'investigator'),
         serialization_alias="investigator_name"
     )
     description: Optional[str] = None
     priority: Optional[str] = Field(default="Medium", description="Priority level: Low, Medium, High, Critical")
     status: Optional[str] = Field(default="Active", description="Status: Active, Pending, Closed, Archived, PENDING_DELETION")
+    vault_status: Optional[str] = Field(default="OPEN", description="Vault status: OPEN, LOCKED")
+    vault_locked_at: Optional[datetime] = None
+    vault_locked_by: Optional[str] = None
+    vault_unlock_reason: Optional[str] = None
     deletion_reason: Optional[str] = None
     deletion_requested_by: Optional[str] = None
     expected_evidence_count: Optional[int] = Field(default=0, description="Total expected evidence items for case completion tracking")
@@ -35,7 +39,7 @@ class CaseBase(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class CaseCreate(CaseBase):
-    pass
+    case_id: Optional[str] = None
 
 class CaseUpdate(BaseModel):
     case_name: Optional[str] = None
@@ -47,6 +51,10 @@ class CaseUpdate(BaseModel):
     description: Optional[str] = None
     priority: Optional[str] = None
     status: Optional[str] = None
+    vault_status: Optional[str] = None
+    vault_locked_at: Optional[datetime] = None
+    vault_locked_by: Optional[str] = None
+    vault_unlock_reason: Optional[str] = None
     deletion_reason: Optional[str] = None
     deletion_requested_by: Optional[str] = None
 
@@ -64,6 +72,21 @@ class CaseDeletionRequestInput(BaseModel):
 
 class CaseDeletionResolutionInput(BaseModel):
     action: str = Field(..., description="Resolution action: 'APPROVE' or 'REJECT'")
+
+
+class CaseMemberAssignmentInput(BaseModel):
+    user_id: str
+    responsibilities: List[str] = Field(default_factory=list, description="e.g. ['Investigator', 'Forensic Analyst']")
+
+class CaseMemberResponse(BaseModel):
+    id: str
+    case_id: str
+    user_id: str
+    username: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    responsibilities: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChainOfCustodyBase(BaseModel):
@@ -99,11 +122,30 @@ class IntegrityCheckResponse(BaseModel):
     hmac_verified: bool
     status: str
 
+from app.db.schemas.graph import (
+    GraphFilterMetadata, UnresolvedCorrelationEdge, EvidenceGraphResponse
+)
+from app.db.schemas.correlation_dataset import (
+    CORRELATION_SCHEMA_VERSION, EpistemicLabel, RelationshipType,
+    ArtifactDomain, TemporalOrderStatus, TimestampQuality, ClockSkewRisk,
+    DatasetSplit, AdjudicationStatus, EvidenceProvenance, NormalizedFeatures,
+    DatasetArtifact, DatasetTemporalContext, DatasetSharedEntities,
+    DatasetAnnotation, DatasetCaseMetadata, CorrelationSample
+)
+
 __all__ = [
     "CaseBase", "CaseCreate", "CaseUpdate", "CaseResponse",
+    "CaseMemberAssignmentInput", "CaseMemberResponse",
     "ChainOfCustodyBase", "ChainOfCustodyCreate", "ChainOfCustodyResponse",
     "EvidenceBase", "EvidenceCreate", "EvidenceResponse", "EvidenceListItem",
     "EvidencePreserveInput", "PersonBHandoffPayload", "Person5HandoffPayload",
     "IntegrityCheckResponse", "EvidenceReadyEventPayload",
-    "CaseUploadCompleteEventPayload", "PreservationPipelineResult"
+    "CaseUploadCompleteEventPayload", "PreservationPipelineResult",
+    "GraphFilterMetadata", "UnresolvedCorrelationEdge", "EvidenceGraphResponse",
+    "CORRELATION_SCHEMA_VERSION", "EpistemicLabel", "RelationshipType",
+    "ArtifactDomain", "TemporalOrderStatus", "TimestampQuality", "ClockSkewRisk",
+    "DatasetSplit", "AdjudicationStatus", "EvidenceProvenance", "NormalizedFeatures",
+    "DatasetArtifact", "DatasetTemporalContext", "DatasetSharedEntities",
+    "DatasetAnnotation", "DatasetCaseMetadata", "CorrelationSample"
 ]
+

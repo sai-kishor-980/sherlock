@@ -1,0 +1,36 @@
+[
+  {
+    "sample_id": "PAIR-DISPUTED-001",
+    "investigation_id": "SYNTH_CASE_DISPUTE",
+    "schema_version": "1.0.0",
+    "case_metadata": { "synthetic_fixture": true },
+    "source_artifact": {
+      "artifact_id": "PID-100",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:00Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "target_artifact": {
+      "artifact_id": "PID-200",
+      "domain": "memory",
+      "artifact_type": "process",
+      "timestamp": "2026-09-20T08:00:10Z",
+      "timestamp_quality": "EXACT_ORIGIN"
+    },
+    "temporal_context": {
+      "delta_seconds": 10.0,
+      "temporal_order": "SOURCE_PRECEDES_TARGET"
+    },
+    "annotation": {
+      "epistemic_label": "VERIFIED_POSITIVE",
+      "ground_truth_causal_label": 1,
+      "relationship_type": "PARENT_CHILD_PROCESS",
+      "label_rationale": "Disputed label: annotators disagree on parentage.",
+      "annotation_source": "HUMAN_EXPERT",
+      "annotator_ids": ["EXAMINER_01", "EXAMINER_02"],
+      "adjudication_status": "DISPUTED",
+      "annotator_confidence": 0.60
+    }
+  }
+]

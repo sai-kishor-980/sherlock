@@ -1,4 +1,5 @@
 {
+    "FilesystemExtractor": true,
     "RegistryExtractor": true,
     "BrowserExtractor": true,
     "EventLogExtractor": true,
