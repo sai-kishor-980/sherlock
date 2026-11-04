@@ -3,12 +3,12 @@ Model Adapter Service for Agentic Sherlock AI.
 
 Manages:
 1. Base Cybersecurity Qwen3 QLoRA Adapter (from Cybersecurity_Qwen3_QLoRA_Package.zip) - Used by Supervisor Agent
-2. Domain-Specific LoRA Adapters (from models.zip) - Used by the 5 Specialized Agents:
-   - Network Agent (Pranay)   -> network_adapter
-   - Memory Agent (Bharath)   -> memory_adapter
-   - Disk Agent (Aswith)      -> disk_adapter
-   - Log Agent (Sanhith)      -> log_adapter
-   - Registry Agent (Kishor)  -> registry_adapter
+2. Domain-Specific LoRA Adapters (from models.zip) - Used by the Specialized Agents:
+   - Network Forensics Agent   -> network_adapter
+   - Memory Analysis Agent     -> memory_adapter
+   - Disk & Filesystem Agent   -> disk_adapter
+   - Event Logs Agent          -> log_adapter
+   - Windows Registry Agent    -> registry_adapter
 """
 
 import os
@@ -41,36 +41,42 @@ AGENT_DOMAIN_MAP = {
     "network": {
         "agent_name": "Network Agent",
         "team_member": "Pranay",
+        "role": "Network Packet & Protocol Specialist",
         "description": "PCAP, DNS, network sockets, browser, and email artifacts",
         "adapter_name": "network_adapter"
     },
     "memory": {
         "agent_name": "Memory Agent",
         "team_member": "Bharath",
+        "role": "Volatile Memory & Kernel Specialist",
         "description": "RAM volatile memory, processes, DLLs, and in-memory malware indicators",
         "adapter_name": "memory_adapter"
     },
     "disk": {
         "agent_name": "Disk Agent",
         "team_member": "Aswith",
+        "role": "Filesystem & Disk Artifact Specialist",
         "description": "MFT, LNK shortcuts, Prefetch execution, Recycle Bin, and Jump Lists",
         "adapter_name": "disk_adapter"
     },
     "logs": {
         "agent_name": "Log Agent",
         "team_member": "Sanhith",
+        "role": "Windows Event & Sysmon Specialist",
         "description": "Security Event Logs, Sysmon, process creation, PowerShell, and authentication",
         "adapter_name": "log_adapter"
     },
     "registry": {
         "agent_name": "Registry Agent",
         "team_member": "Kishor",
+        "role": "Registry Hive & Configuration Specialist",
         "description": "Installed software, USB device history, Run/RunOnce keys, and persistence",
         "adapter_name": "registry_adapter"
     },
     "supervisor": {
         "agent_name": "Supervisor Agent",
-        "team_member": "Supervisor Orchestrator",
+        "team_member": "Supervisor",
+        "role": "Cross-Domain Investigation State Synthesis",
         "description": "Cross-domain correlation reasoning, hypothesis generation, and kill-chain synthesis",
         "adapter_name": "base_cybersecurity"
     }
@@ -80,6 +86,10 @@ AGENT_DOMAIN_MAP = {
 class ModelAdapterService:
     _initialized = False
     _adapter_status = {}
+    _remote_gpu_url = None
+    _local_model = None
+    _local_tokenizer = None
+    _local_model_loaded = False
 
     @classmethod
     def initialize_adapters(cls, force_reextract: bool = False):
@@ -208,11 +218,67 @@ class ModelAdapterService:
         return cls._adapter_status
 
     @classmethod
-    def analyze_domain_evidence(cls, domain: str, evidence_type: str, evidence_content: Any) -> Dict[str, Any]:
+    def check_gpu_readiness(cls, timeout: float = 3.0) -> Dict[str, Any]:
+        """
+        Actively checks whether an eligible GPU inference provider (Tier 1 local or Tier 2 remote Colab) is available.
+        Returns:
+            {"ready": bool, "provider": str, "device": str, "reason": Optional[str]}
+        """
+        hw = cls.get_hardware_info()
+        if hw.get("gpu_eligible"):
+            return {
+                "ready": True,
+                "provider": "local_gpu",
+                "device": hw.get("device_name", "Local NVIDIA GPU"),
+                "vram_gb": hw.get("total_vram_gb")
+            }
+
+        remote_url = cls.get_remote_gpu_url()
+        if not remote_url:
+            return {
+                "ready": False,
+                "provider": "none",
+                "reason": "Local GPU lacks required 6GB VRAM and COLAB_GPU_INFERENCE_URL is not configured."
+            }
+
+        token = cls.get_remote_token()
+        headers = {"User-Agent": "SherlockAI-Client"}
+        if token:
+            headers["X-Sherlock-Token"] = token
+
+        import urllib.request
+        try:
+            req = urllib.request.Request(f"{remote_url.rstrip('/')}/health", headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return {
+                        "ready": True,
+                        "provider": "remote_gpu",
+                        "device": data.get("gpu_device", "Remote GPU"),
+                        "base_model": data.get("base_model"),
+                        "adapters_loaded": data.get("adapters_loaded", [])
+                    }
+        except Exception as e:
+            return {
+                "ready": False,
+                "provider": "remote_gpu",
+                "reason": f"Remote Colab GPU health check failed: {str(e)}"
+            }
+
+        return {
+            "ready": False,
+            "provider": "none",
+            "reason": "GPU inference services are unavailable."
+        }
+
+    @classmethod
+    def analyze_domain_evidence(cls, domain: str, evidence_type: str, evidence_content: Any, timeout: int = 45) -> Dict[str, Any]:
         """
         Executes domain-specific cognitive forensic reasoning.
         Uses Qwen-grounded prompting and schema matching the QLoRA training objective:
-        Classification, Risk Level, Reasoning, and Key Evidence.
+        Classification, Risk Level, Reasoning, Key Evidence, and Observation Accounting.
+        Replaces silent truncation with bounded batching/chunking.
         """
         status = cls.get_status()
         domain_info = AGENT_DOMAIN_MAP.get(domain, {
@@ -220,187 +286,422 @@ class ModelAdapterService:
             "team_member": "Specialist"
         })
 
-        # Format input string representation
-        if isinstance(evidence_content, (dict, list)):
-            evidence_str = json.dumps(evidence_content, indent=2)
+        # -------------------------------------------------------------
+        # 0. Evidentiary Absence Gate (Missing / Empty Artifacts)
+        # -------------------------------------------------------------
+        if evidence_content is None or evidence_content == {} or evidence_content == []:
+            import uuid
+            finding_id = f"STATUS-{domain.upper()}-{uuid.uuid4().hex[:6].upper()}"
+            return {
+                "finding_id": finding_id,
+                "domain": domain,
+                "agent": domain_info.get("agent_name", f"{domain.capitalize()} Agent"),
+                "team_member": domain_info.get("team_member", "Specialist"),
+                "evidence_type": evidence_type,
+                "artifact_type": evidence_type,
+                "status": "INSUFFICIENT_EVIDENCE",
+                "classification": "INSUFFICIENT_EVIDENCE",
+                "assessment": "INSUFFICIENT_EVIDENCE",
+                "risk_level": "INFORMATIONAL",
+                "risk": "INFORMATIONAL",
+                "confidence": 0.0,
+                "is_examination_status": True,
+                "observation": f"No {domain} artifacts submitted or recovered for forensic examination in this case.",
+                "reasoning": f"Evidentiary absence in the {domain} domain. No suspicious anomalies detected due to absence of domain telemetry.",
+                "key_evidence": [],
+                "entities": [],
+                "observation_accounting": {
+                    "total_observations": 0,
+                    "analyzed_observations": 0,
+                    "skipped_observations": 0,
+                    "failed_observations": 0,
+                    "batch_count": 0,
+                    "accounting_status": "EMPTY",
+                    "source_artifact": evidence_type
+                },
+                "inference_provider": "Examination Status (Evidentiary Absence)",
+                "analysis_mode": "Examination Status"
+            }
+
+        # -------------------------------------------------------------
+        # 1. Observation Accounting & Bounded Batching Determination
+        # -------------------------------------------------------------
+        records = []
+        is_tabular = False
+        if isinstance(evidence_content, list):
+            records = evidence_content
+            is_tabular = True
+        elif isinstance(evidence_content, dict):
+            for key in ["records", "queries", "connections", "processes", "events", "entries", "messages", "devices", "deleted_files", "plugins"]:
+                val = evidence_content.get(key)
+                if isinstance(val, list) and len(val) > 0:
+                    records = val
+                    is_tabular = True
+                    break
+                elif isinstance(val, dict) and key == "plugins":
+                    all_p_items = []
+                    for p_items in val.values():
+                        if isinstance(p_items, list):
+                            all_p_items.extend(p_items)
+                    if all_p_items:
+                        records = all_p_items
+                        is_tabular = True
+                        break
+
+        if is_tabular and len(records) == 0:
+            import uuid
+            finding_id = f"STATUS-{domain.upper()}-{uuid.uuid4().hex[:6].upper()}"
+            return {
+                "finding_id": finding_id,
+                "domain": domain,
+                "agent": domain_info.get("agent_name", f"{domain.capitalize()} Agent"),
+                "team_member": domain_info.get("team_member", "Specialist"),
+                "evidence_type": evidence_type,
+                "artifact_type": evidence_type,
+                "status": "INSUFFICIENT_EVIDENCE",
+                "classification": "INSUFFICIENT_EVIDENCE",
+                "assessment": "INSUFFICIENT_EVIDENCE",
+                "risk_level": "INFORMATIONAL",
+                "risk": "INFORMATIONAL",
+                "confidence": 0.0,
+                "is_examination_status": True,
+                "observation": f"No {domain} records found in artifact '{evidence_type}'.",
+                "reasoning": f"Evidentiary absence in the {domain} domain. No suspicious anomalies detected due to empty record set.",
+                "key_evidence": [],
+                "entities": [],
+                "observation_accounting": {
+                    "total_observations": 0,
+                    "analyzed_observations": 0,
+                    "skipped_observations": 0,
+                    "failed_observations": 0,
+                    "batch_count": 0,
+                    "accounting_status": "EMPTY",
+                    "source_artifact": evidence_type
+                },
+                "inference_provider": "Examination Status (Evidentiary Absence)",
+                "analysis_mode": "Examination Status"
+            }
+
+        total_observations = len(records) if is_tabular else 1
+        BATCH_SIZE = 20
+        MAX_BATCHES = 5  # Bounded to at most 100 observations per run to preserve latency
+        
+        batches = []
+        if is_tabular and total_observations > BATCH_SIZE:
+            all_chunks = [records[i:i + BATCH_SIZE] for i in range(0, total_observations, BATCH_SIZE)]
+            batches = all_chunks[:MAX_BATCHES]
+            analyzed_count = sum(len(b) for b in batches)
+            skipped_count = total_observations - analyzed_count
         else:
-            evidence_str = str(evidence_content)
+            batches = [evidence_content]
+            analyzed_count = total_observations
+            skipped_count = 0
 
-        # Truncate evidence string if exceedingly large for single inference pass
-        if len(evidence_str) > 8000:
-            evidence_str = evidence_str[:8000] + "\n...[truncated for analysis window]..."
+        accounting = {
+            "total_observations": total_observations,
+            "analyzed_observations": analyzed_count,
+            "skipped_observations": skipped_count,
+            "failed_observations": 0,
+            "batch_count": len(batches),
+            "accounting_status": "COMPLETE" if skipped_count == 0 else "PARTIAL",
+            "source_artifact": evidence_type
+        }
 
-        # 1. Check for Remote Google Colab GPU Inference Tunnel
-        remote_url = os.environ.get("COLAB_GPU_INFERENCE_URL") or getattr(cls, "_remote_gpu_url", None)
-        if remote_url:
-            try:
-                import urllib.request
-                req_data = json.dumps({
+        # -------------------------------------------------------------
+        # 2. Execute Analysis across Batches (Remote GPU Only)
+        # Tier 2: Remote AI GPU Inference Service (HTTP/REST Bridge)
+        # No local CUDA fallback. No rule-based AI inference fallback.
+        # -------------------------------------------------------------
+        remote_url = cls.get_remote_gpu_url()
+        batch_results = []
+        execution_mode = "AI-assisted" if remote_url else "GPU_UNAVAILABLE"
+
+        for b_idx, batch_data in enumerate(batches):
+            batch_result = None
+
+            # --- TIER 2: Remote AI GPU Inference Service ---
+            if remote_url:
+                try:
+                    import urllib.request
+                    req_data = json.dumps({
+                        "domain": domain,
+                        "evidence_type": f"{evidence_type} (Batch {b_idx + 1}/{len(batches)})" if len(batches) > 1 else evidence_type,
+                        "evidence": batch_data
+                    }).encode("utf-8")
+                    req_headers = {"Content-Type": "application/json", "User-Agent": "SherlockAI-Client"}
+                    token = cls.get_remote_token()
+                    if token:
+                        req_headers["X-Sherlock-Token"] = token
+
+                    req = urllib.request.Request(
+                        f"{remote_url.rstrip('/')}/api/v1/inference",
+                        data=req_data,
+                        headers=req_headers
+                    )
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            remote_json = json.loads(resp.read().decode("utf-8"))
+                            norm_res = cls.normalize_agent_output(remote_json, domain=domain, evidence_type=evidence_type)
+                            norm_res["inference_provider"] = "AI-assisted (Remote GPU Accelerated)"
+                            norm_res["analysis_mode"] = "AI-assisted"
+                            if "model_info" in remote_json:
+                                norm_res["model_info"] = remote_json["model_info"]
+                            batch_result = norm_res
+                            execution_mode = "AI-assisted"
+                except Exception as e:
+                    log_error_event(f"[ModelAdapter] Remote inference failed for {domain} (Batch {b_idx + 1}): {e}.")
+
+            # --- Require Genuine GPU Inference ---
+            if not batch_result:
+                import uuid
+                fail_res = {
+                    "finding_id": f"FINDING-{domain.upper()}-FAIL-{uuid.uuid4().hex[:6].upper()}",
                     "domain": domain,
+                    "agent": domain_info.get("agent_name", f"{domain.capitalize()} Agent"),
+                    "team_member": domain_info.get("team_member", "Specialist"),
                     "evidence_type": evidence_type,
-                    "evidence": evidence_content
-                }).encode("utf-8")
-                req = urllib.request.Request(
-                    f"{remote_url.rstrip('/')}/api/v1/inference",
-                    data=req_data,
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=4) as resp:
-                    if resp.status == 200:
-                        remote_result = json.loads(resp.read().decode("utf-8"))
-                        normalized = cls.normalize_agent_output(remote_result, domain=domain, evidence_type=evidence_type)
-                        normalized["inference_provider"] = "Google Colab Remote GPU (Qwen2.5-7B LoRA)"
-                        return normalized
-            except Exception as e:
-                log_error_event(f"[ModelAdapter] Remote Colab GPU inference failed: {e}. Falling back to local evaluator.")
+                    "artifact_type": evidence_type,
+                    "status": "FAILED",
+                    "error": "GPU_UNAVAILABLE",
+                    "classification": "INCONCLUSIVE",
+                    "assessment": "INCONCLUSIVE",
+                    "risk_level": "INFORMATIONAL",
+                    "risk": "INFORMATIONAL",
+                    "confidence": 0.0,
+                    "observation": f"Inference execution failed for {domain}: remote GPU inference bridge is offline or unavailable.",
+                    "reasoning": "Forensic neural model inference requires an active remote GPU bridge. Colab GPU bridge is disconnected.",
+                    "key_evidence": [],
+                    "entities": [],
+                    "inference_provider": "Failed (GPU Unavailable)",
+                    "analysis_mode": "Failed"
+                }
+                batch_result = fail_res
 
-        # 2. Check for Local PyTorch + PEFT execution capability
-        torch_available = False
-        try:
-            import torch
-            import transformers
-            from peft import PeftModel
-            torch_available = True
-        except ImportError:
-            torch_available = False
+            batch_results.append(batch_result)
 
-        if torch_available and status.get("domain_adapters", {}).get(domain, {}).get("status") == "READY":
-            try:
-                # Live HuggingFace PEFT inference if environment supports
-                return cls._run_live_peft_inference(domain, evidence_type, evidence_str)
-            except Exception as ex:
-                # Gracefully fall back to deterministic domain heuristic evaluator
-                pass
+        # -------------------------------------------------------------
+        # 3. Aggregate Batch Results & Attach Accounting
+        # -------------------------------------------------------------
+        if len(batch_results) == 1:
+            final_res = batch_results[0]
+        else:
+            severities = ["BENIGN", "SUSPICIOUS", "MALICIOUS"]
+            risk_ranks = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+            max_class = "BENIGN"
+            max_risk = "LOW"
+            all_key_ev = []
+            all_reasoning = []
+            all_entities = []
 
-        # 3. Offline / Air-Gapped Cognitive Forensic Evaluator (Local Fallback)
-        result = cls._run_forensic_evaluator(domain, domain_info, evidence_type, evidence_content)
-        result["inference_provider"] = "Local Forensic Cognitive Engine (Air-Gapped)"
-        return result
+            for r in batch_results:
+                c = str(r.get("classification", "BENIGN")).upper()
+                rk = str(r.get("risk_level", "LOW")).upper()
+                if (severities.index(c) if c in severities else 0) > (severities.index(max_class) if max_class in severities else 0):
+                    max_class = c
+                if (risk_ranks.index(rk) if rk in risk_ranks else 0) > (risk_ranks.index(max_risk) if max_risk in risk_ranks else 0):
+                    max_risk = rk
+                all_key_ev.extend(r.get("key_evidence", []))
+                all_reasoning.append(r.get("reasoning", ""))
+                all_entities.extend(r.get("entities", []))
+
+            dedup_ev = list(dict.fromkeys(all_key_ev))
+            final_res = dict(batch_results[0])
+            final_res["classification"] = max_class
+            final_res["assessment"] = max_class
+            final_res["risk_level"] = max_risk
+            final_res["risk"] = max_risk
+            final_res["key_evidence"] = dedup_ev
+            final_res["entities"] = all_entities
+            final_res["reasoning"] = f"Aggregated {len(batches)} observation batches. " + " ".join(all_reasoning[:2])
+
+        final_res["observation_accounting"] = accounting
+        final_res["analysis_mode"] = execution_mode
+        return final_res
+
+    _remote_token = None
+    _url_lock = None
+
+    @classmethod
+    def _get_url_lock(cls):
+        if cls._url_lock is None:
+            import threading
+            cls._url_lock = threading.Lock()
+        return cls._url_lock
 
     @classmethod
     def set_remote_gpu_url(cls, url: Optional[str]):
-        cls._remote_gpu_url = url.strip() if url else None
+        with cls._get_url_lock():
+            cls._remote_gpu_url = url.strip() if url else None
 
     @classmethod
-    def get_remote_gpu_url(cls) -> Optional[str]:
-        if getattr(cls, "_remote_gpu_url", None):
-            return cls._remote_gpu_url
-        env_url = os.environ.get("COLAB_GPU_INFERENCE_URL")
-        if env_url:
-            return env_url
-        dotenv_file = BACKEND_DIR / ".env"
-        if dotenv_file.exists():
-            try:
-                with open(dotenv_file, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("COLAB_GPU_INFERENCE_URL="):
-                            url = line.split("=", 1)[1].strip().strip('"').strip("'")
-                            if url:
-                                cls._remote_gpu_url = url
-                                return url
-            except Exception:
-                pass
+    def set_remote_token(cls, token: Optional[str]):
+        with cls._get_url_lock():
+            cls._remote_token = token.strip() if token else None
+
+    @classmethod
+    def get_remote_token(cls) -> Optional[str]:
+        with cls._get_url_lock():
+            if getattr(cls, "_remote_token", None):
+                return cls._remote_token
+            env_token = os.environ.get("SHERLOCK_REMOTE_TOKEN")
+            if env_token:
+                return env_token
+            dotenv_file = BACKEND_DIR / ".env"
+            if dotenv_file.exists():
+                try:
+                    with open(dotenv_file, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("SHERLOCK_REMOTE_TOKEN="):
+                                token = line.split("=", 1)[1].strip().strip('"').strip("'")
+                                if token:
+                                    cls._remote_token = token
+                                    return token
+                except Exception:
+                    pass
         return None
 
     @classmethod
-    def _run_live_peft_inference(cls, domain: str, evidence_type: str, evidence_str: str) -> Dict[str, Any]:
-        import torch
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        from peft import PeftModel
-
-        domain_target = ADAPTERS_CACHE_DIR / domain
-        tokenizer = AutoTokenizer.from_pretrained(str(domain_target))
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a cybersecurity forensic analysis assistant. "
-                    "Analyze cybersecurity evidence carefully and provide a concise "
-                    "classification, risk assessment, reasoning, and key evidence. "
-                    "Base the response only on the supplied evidence."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Analyze the following cybersecurity evidence.\n\n"
-                    f"Domain:\n{domain}\n\n"
-                    f"Evidence Type:\n{evidence_type}\n\n"
-                    f"Evidence:\n{evidence_str}\n\n"
-                    f"Determine whether the evidence indicates benign activity or malicious/attack activity.\n\n"
-                    f"Provide:\n1. Classification\n2. Risk level\n3. Reasoning\n4. Key evidence supporting the classification."
-                )
-            }
-        ]
-
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        # We don't load the full 7B model onto CPU here unless explicitly called, to preserve server memory
-        raise NotImplementedError("Live GPU inference requested on CPU device")
+    def get_remote_gpu_url(cls) -> Optional[str]:
+        with cls._get_url_lock():
+            if getattr(cls, "_remote_gpu_url", None):
+                return cls._remote_gpu_url
+            env_url = os.environ.get("COLAB_GPU_INFERENCE_URL")
+            if env_url:
+                return env_url
+            dotenv_file = BACKEND_DIR / ".env"
+            if dotenv_file.exists():
+                try:
+                    with open(dotenv_file, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("COLAB_GPU_INFERENCE_URL="):
+                                url = line.split("=", 1)[1].strip().strip('"').strip("'")
+                                if url:
+                                    cls._remote_gpu_url = url
+                                    return url
+                except Exception:
+                    pass
+        return None
 
     @classmethod
-    def _run_forensic_evaluator(cls, domain: str, domain_info: dict, evidence_type: str, data: Any) -> Dict[str, Any]:
+    def get_hardware_info(cls) -> Dict[str, Any]:
         """
-        Forensic rule-based deduction engine grounded in NIST SP 800-86 and MITRE ATT&CK.
+        Auto-detects host system GPU acceleration capabilities.
+        Enforces a minimum 6.0 GB VRAM requirement before declaring local GPU eligibility
+        to protect against CUDA Out-Of-Memory (OOM) failures on low-spec hardware.
         """
-        agent_name = domain_info.get("agent_name", "Forensic Agent")
-        member = domain_info.get("team_member", "Specialist")
+        info = {
+            "cuda_available": False,
+            "device_name": None,
+            "total_vram_gb": 0.0,
+            "gpu_eligible": False,
+            "reason": "No CUDA device detected on host"
+        }
+        try:
+            import torch
+            if torch.cuda.is_available():
+                info["cuda_available"] = True
+                dev_name = torch.cuda.get_device_name(0)
+                info["device_name"] = dev_name
+                total_mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                info["total_vram_gb"] = round(total_mem, 2)
+                if total_mem >= 6.0:
+                    info["gpu_eligible"] = True
+                    info["reason"] = f"Local NVIDIA GPU ({dev_name}, {round(total_mem, 2)} GB VRAM) meets requirements (>= 6GB)"
+                else:
+                    info["gpu_eligible"] = False
+                    info["reason"] = f"Local NVIDIA GPU ({dev_name}, {round(total_mem, 2)} GB VRAM) is below 6.0 GB VRAM required for 7B model; routed to Tier 2/3"
+        except Exception as e:
+            info["reason"] = f"Hardware detection exception: {str(e)}"
+        return info
 
-        # Anomaly detection counters
-        suspicious_hits = []
-        risk_level = "LOW"
-        classification = "BENIGN"
+    @classmethod
+    def get_inference_tier_status(cls) -> Dict[str, Any]:
+        """
+        Evaluates the active 3-tier inference hierarchy and returns standardized neutral status.
+        """
+        hw = cls.get_hardware_info()
+        remote_url = cls.get_remote_gpu_url()
+        remote_online = False
+        remote_model = None
+        remote_device = None
 
-        text_dump = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
-        text_lower = text_dump.lower()
+        remote_adapters = []
+        remote_vram = None
 
-        # High-risk keywords across forensic domains
-        indicators = {
-            "powershell": "Execution of encoded PowerShell or script block activity (MITRE T1059.001)",
-            "mimikatz": "Credential dumping utility indicator detected (MITRE T1003)",
-            "cobaltstrike": "Adversary command and control framework beacon pattern (MITRE T1071)",
-            "beacon": "Periodic beaconing network activity or C2 connection (MITRE T1071.001)",
-            "rundll32": "Suspicious proxy execution via rundll32.exe (MITRE T1218.011)",
-            "svchost": "Anomalous parent-child or unhosted svchost process (MITRE T1036.004)",
-            "injection": "Memory section injection / hollowed process indicator (MITRE T1055)",
-            "runonce": "Persistence mechanism established in Run/RunOnce registry key (MITRE T1547.001)",
-            "cmd.exe": "Command shell invocation from non-standard parent (MITRE T1059.003)",
-            "whoami": "Local privilege / system reconnaissance command executed (MITRE T1033)",
-            "unauthorized": "Authentication anomaly or lateral movement logon event (MITRE T1078)"
+        if remote_url:
+            token = cls.get_remote_token()
+            probe_headers = {"User-Agent": "SherlockAI-Client"}
+            if token:
+                probe_headers["X-Sherlock-Token"] = token
+
+            for probe_path in ["/health", "/"]:
+                try:
+                    import urllib.request
+                    req = urllib.request.Request(
+                        f"{remote_url.rstrip('/')}{probe_path}",
+                        headers=probe_headers
+                    )
+                    with urllib.request.urlopen(req, timeout=3) as resp:
+                        if resp.status == 200:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            remote_online = True
+                            remote_model = data.get("base_model") or data.get("model")
+                            remote_device = data.get("gpu_device") or data.get("device")
+                            remote_adapters = data.get("adapters_loaded", [])
+                            remote_vram = data.get("vram_allocated_gb")
+                            break
+                except Exception:
+                    remote_online = False
+
+        if hw["gpu_eligible"]:
+            active_tier = "Tier 1: Local GPU Accelerated"
+            mode = "AI-assisted"
+            service_available = True
+            active_device = hw["device_name"]
+            provider = "AI-assisted (Local GPU Accelerated)"
+        elif remote_online:
+            active_tier = "Tier 2: Remote GPU Accelerated"
+            mode = "AI-assisted"
+            service_available = True
+            active_device = remote_device or "Remote GPU Service"
+            provider = "AI-assisted (Remote GPU Accelerated)"
+        else:
+            active_tier = "Tier 3: Rule-based Engine"
+            mode = "Rule-based"
+            service_available = False
+            active_device = "CPU (Forensic Heuristics)"
+            provider = "Rule-based (Local Forensic Heuristic Engine)"
+
+        return {
+            "active_tier": active_tier,
+            "analysis_mode": mode,
+            "mode": provider,
+            "is_connected": hw["gpu_eligible"] or remote_online,
+            "inference_status": "Connected" if (hw["gpu_eligible"] or remote_online) else "Disconnected",
+            "service_status": "Available" if service_available else "Unavailable",
+            "active_device": active_device,
+            "local_hardware": {
+                "cuda_available": hw["cuda_available"],
+                "device_name": hw["device_name"],
+                "total_vram_gb": hw["total_vram_gb"],
+                "gpu_eligible": hw["gpu_eligible"],
+                "qualification_reason": hw["reason"],
+                "model_cached_in_vram": cls._local_model_loaded
+            },
+            "remote_service": {
+                "configured": bool(remote_url),
+                "url": remote_url if remote_url else None,
+                "reachable": remote_online,
+                "remote_model": remote_model,
+                "remote_device": remote_device,
+                "adapters_loaded": remote_adapters,
+                "vram_allocated_gb": remote_vram
+            }
         }
 
-        for kw, desc in indicators.items():
-            if kw in text_lower:
-                suspicious_hits.append(desc)
 
-        if len(suspicious_hits) >= 3:
-            classification = "MALICIOUS"
-            risk_level = "CRITICAL"
-        elif len(suspicious_hits) >= 1:
-            classification = "SUSPICIOUS"
-            risk_level = "HIGH"
-        else:
-            classification = "BENIGN"
-            risk_level = "LOW"
-
-        reasoning = (
-            f"The {agent_name} ({member}) examined the extracted {evidence_type} artifacts. "
-            + (f"Identified {len(suspicious_hits)} potential security indicator(s) consistent with adversary techniques."
-               if suspicious_hits else "No overt persistence or malicious execution patterns identified in this artifact.")
-        )
-
-        return cls.normalize_agent_output({
-            "domain": domain,
-            "agent": agent_name,
-            "team_member": member,
-            "evidence_type": evidence_type,
-            "classification": classification,
-            "risk_level": risk_level,
-            "reasoning": reasoning,
-            "key_evidence": suspicious_hits or ["Baseline operational activity observed."],
-            "adapter_model": domain_info.get("adapter_name")
-        }, domain=domain, evidence_type=evidence_type)
 
     @classmethod
     def normalize_agent_output(cls, raw_output: Any, domain: str, evidence_type: str = "") -> Dict[str, Any]:
@@ -466,9 +767,31 @@ class ModelAdapterService:
             elif not isinstance(entities, list):
                 entities = [{"value": str(entities)}]
 
+            # Evidence-corroborated confidence calculation
+            if raw_class == "INSUFFICIENT_EVIDENCE" or raw_output.get("status") == "INSUFFICIENT_EVIDENCE":
+                classification = "INSUFFICIENT_EVIDENCE"
+                risk_level = "INFORMATIONAL"
+                confidence_val = 0.0
+            elif raw_output.get("status") == "FAILED" or raw_output.get("error") == "GPU_UNAVAILABLE":
+                classification = "INCONCLUSIVE"
+                risk_level = "INFORMATIONAL"
+                confidence_val = 0.0
+            else:
+                is_ai = raw_output.get("analysis_mode") == "AI-assisted" or "GPU" in str(raw_output.get("inference_provider", ""))
+                base_score = 0.75 if is_ai else 0.60
+                verified_ents = [e for e in entities if isinstance(e, dict) and any(e.values())]
+                corroboration_boost = min(0.20, (len(verified_ents) + len(key_evidence)) * 0.04)
+                if classification == "BENIGN":
+                    calculated_confidence = round(min(0.95, base_score + corroboration_boost), 2)
+                elif classification in ("SUSPICIOUS", "MALICIOUS"):
+                    calculated_confidence = round(min(0.95, base_score + corroboration_boost), 2)
+                else:
+                    calculated_confidence = 0.50
+                confidence_val = float(raw_output.get("confidence") if raw_output.get("confidence") is not None else calculated_confidence)
+
             return {
                 "finding_id": finding_id,
-                "agent": domain,
+                "agent": agent_name,
                 "domain": domain,
                 "team_member": member,
                 "artifact_type": evidence_type or raw_output.get("artifact_type", "artifact"),
@@ -489,50 +812,134 @@ class ModelAdapterService:
                     "timestamp_type": "OBSERVED" if raw_output.get("timestamp_utc") else "UNAVAILABLE",
                     "event_description": f"{evidence_type} execution record analyzed"
                 },
-                "confidence": float(raw_output.get("confidence", 0.90 if classification != "BENIGN" else 0.70)),
+                "confidence": confidence_val,
                 "recommended_next_evidence": raw_output.get("recommended_next_evidence") or [
                     "Correlate with process execution logs",
                     "Verify corresponding filesystem or network indicators"
                 ],
                 "adapter_model": raw_output.get("adapter_model") or domain_info.get("adapter_name"),
-                "contract_validated": True
+                "contract_validated": True,
+                "analysis_mode": raw_output.get("analysis_mode", "AI-assisted" if is_ai else "Rule-based"),
+                "inference_provider": raw_output.get("inference_provider", "AI-assisted (Remote GPU Accelerated)" if is_ai else "Rule-based (Local Forensic Heuristic Engine)")
             }
 
-        # Otherwise parse natural language string output from LoRA
-        text = str(raw_output)
-        classification = "BENIGN"
-        if "malicious" in text.lower():
+        # Otherwise parse natural language string or raw text output
+        import re, uuid
+        text = str(raw_output).strip()
+
+        # Step 1: Attempt JSON extraction from markdown or raw text
+        cleaned_json = None
+        if "```json" in text:
+            m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if m:
+                try:
+                    cleaned_json = json.loads(m.group(1))
+                except Exception:
+                    cleaned_json = None
+        elif "```" in text:
+            m = re.search(r"```\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if m:
+                try:
+                    cleaned_json = json.loads(m.group(1))
+                except Exception:
+                    cleaned_json = None
+        elif text.startswith("{") and text.endswith("}"):
+            try:
+                cleaned_json = json.loads(text)
+            except Exception:
+                cleaned_json = None
+
+        if isinstance(cleaned_json, dict):
+            return cls.normalize_agent_output(cleaned_json, domain=domain, evidence_type=evidence_type)
+
+        # Step 2: Parse explicit classification and risk level from LLM text output
+        # These patterns extract the LLM's own classification decision from free-text
+        # output; they do not perform independent forensic classification.
+        classification_match = re.search(r"classification:\s*(suspicious|malicious|benign)\b", text, re.IGNORECASE)
+        risk_match = re.search(r"risk level:\s*(critical|high|medium|low|informational)\b", text, re.IGNORECASE)
+
+        has_negative = bool(re.search(r"\b(?:no|not|neither|without|clean|zero|uncompromised)\s+(?:malicious|suspicious|indicators|threats|anomalies|abnormalities)\b", text, re.IGNORECASE))
+        affirmative_mal = bool(re.search(r"\b(?:is|confirmed|exhibits|classified as|verdict:?)\s+(?:malicious|compromised)\b", text, re.IGNORECASE))
+        affirmative_susp = bool(re.search(r"\b(?:is|exhibits|classified as|verdict:?)\s+(?:suspicious|anomalous)\b", text, re.IGNORECASE))
+
+        if classification_match:
+            raw_class = classification_match.group(1).upper()
+            if raw_class == "MALICIOUS":
+                classification = "MALICIOUS"
+                risk_level = "HIGH"
+                confidence_val = 0.75
+            elif raw_class == "SUSPICIOUS":
+                classification = "SUSPICIOUS"
+                risk_level = "MEDIUM"
+                confidence_val = 0.65
+            else:
+                classification = "BENIGN"
+                risk_level = "LOW"
+                confidence_val = 0.85
+            # Override risk level if explicitly stated
+            if risk_match:
+                raw_risk = risk_match.group(1).upper()
+                risk_map = {"CRITICAL": "CRITICAL", "HIGH": "HIGH", "MEDIUM": "MEDIUM", "LOW": "LOW", "INFORMATIONAL": "INFORMATIONAL"}
+                risk_level = risk_map.get(raw_risk, risk_level)
+        elif has_negative:
+            classification = "BENIGN"
+            risk_level = "LOW"
+            confidence_val = 0.85
+        elif affirmative_mal:
             classification = "MALICIOUS"
-        elif "suspicious" in text.lower():
-            classification = "SUSPICIOUS"
-
-        risk_level = "LOW"
-        if "critical" in text.lower():
-            risk_level = "CRITICAL"
-        elif "high" in text.lower():
             risk_level = "HIGH"
-        elif "medium" in text.lower():
+            confidence_val = 0.75
+        elif affirmative_susp:
+            classification = "SUSPICIOUS"
             risk_level = "MEDIUM"
+            confidence_val = 0.65
+        else:
+            # Safe forensic default: Never guess via naive substring matching
+            classification = "INCONCLUSIVE"
+            risk_level = "INFORMATIONAL"
+            confidence_val = 0.50
 
-        import re
         reasoning_match = re.search(r"3\.\s*Reasoning:?\s*(.*?)(?:4\.\s*Key evidence|\Z)", text, re.IGNORECASE | re.DOTALL)
-        reasoning = reasoning_match.group(1).strip() if reasoning_match else text[:300]
+        reasoning = reasoning_match.group(1).strip() if reasoning_match else text[:500]
 
         evidence_match = re.search(r"4\.\s*Key evidence:?\s*(.*)", text, re.IGNORECASE | re.DOTALL)
         evidence_text = evidence_match.group(1).strip() if evidence_match else ""
         key_evidence = [line.strip("- *").strip() for line in evidence_text.splitlines() if line.strip("- *").strip()]
 
+        finding_id = f"FINDING-{domain.upper()}-{uuid.uuid4().hex[:6].upper()}"
+
         return {
+            "finding_id": finding_id,
             "domain": domain,
             "agent": agent_name,
             "team_member": member,
-            "evidence_type": evidence_type,
+            "artifact_type": evidence_type or "artifact",
+            "evidence_type": evidence_type or "artifact",
+            "observation": f"Unstructured analysis completed for {evidence_type}",
+            "entities": [{"domain": domain, "type": evidence_type}],
+            "assessment": classification,
             "classification": classification,
+            "risk": risk_level,
             "risk_level": risk_level,
-            "reasoning": reasoning,
+            "reasoning": reasoning or "Automated domain analysis completed.",
+            "supporting_evidence": [
+                {"evidence_type": evidence_type, "indicators": key_evidence}
+            ],
             "key_evidence": key_evidence or ["Standard operational telemetry verified."],
+            "timeline": {
+                "timestamp_utc": None,
+                "timestamp_type": "UNAVAILABLE",
+                "event_description": f"{evidence_type} record analyzed"
+            },
+            "confidence": confidence_val,
+            "recommended_next_evidence": [
+                "Correlate with process execution logs",
+                "Verify corresponding filesystem or network indicators"
+            ],
             "adapter_model": domain_info.get("adapter_name"),
-            "contract_validated": True
+            "contract_validated": True,
+            "schema_conforming": False,
+            "analysis_mode": "AI-assisted (Unstructured Text Normalized)"
         }
 
     @classmethod
@@ -573,10 +980,15 @@ class ModelAdapterService:
                     "evidence": payload
                 }).encode("utf-8")
 
+                req_headers = {"Content-Type": "application/json", "User-Agent": "SherlockAI-Client"}
+                token = cls.get_remote_token()
+                if token:
+                    req_headers["X-Sherlock-Token"] = token
+
                 req = urllib.request.Request(
                     f"{remote_url.rstrip('/')}/api/v1/inference",
                     data=req_data,
-                    headers={"Content-Type": "application/json"}
+                    headers=req_headers
                 )
 
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -589,7 +1001,8 @@ class ModelAdapterService:
                         )
 
                         if not val_errors and parsed_output.get("correlations"):
-                            parsed_output["inference_provider"] = "Google Colab Remote GPU (Cybersecurity Qwen LoRA)"
+                            parsed_output["inference_provider"] = "AI-assisted (Remote GPU Accelerated)"
+                            parsed_output["analysis_mode"] = "AI-assisted"
                             parsed_output["validation_status"] = "PASSED"
                             parsed_output["retry_count"] = attempt - 1
                             return parsed_output
@@ -611,7 +1024,8 @@ class ModelAdapterService:
                             return {
                                 "correlations": candidate_edges,
                                 "incident_narrative": str(gpu_narrative).strip(),
-                                "inference_provider": "Google Colab Remote GPU (Cybersecurity Qwen LoRA)",
+                                "inference_provider": "AI-assisted (Remote GPU Accelerated)",
+                                "analysis_mode": "AI-assisted",
                                 "validation_status": "PASSED",
                                 "retry_count": attempt - 1
                             }
@@ -634,20 +1048,17 @@ class ModelAdapterService:
                     continue
                 break
 
-        # Fallback to deterministic synthesis if remote inference failed or output invalid
-        fallback_narrative = (
-            f"Cross-domain forensic synthesis evaluated {len(findings)} specialist findings for case '{case_id}'. "
-            f"The deterministic correlation layer generated {len(candidate_edges)} candidate cross-domain relationships. "
-            f"Remote Supervisor inference status: {'FALLBACK_DETERMINISTIC' if not remote_url else 'UNREACHABLE_OR_INVALID_RETRY'}."
-        )
-
+        # Require Genuine GPU Inference - No deterministic fallback for Supervisor reasoning
+        import uuid
         return {
-            "correlations": candidate_edges,
-            "incident_narrative": fallback_narrative,
-            "inference_provider": "Local Grounded Forensic Synthesizer (Deterministic Fallback)",
-            "validation_status": "FALLBACK" if not last_error else "FAILED_RETRY_FALLBACK",
-            "validation_error": last_error,
-            "retry_count": attempt - 1
+            "correlations": [],
+            "incident_narrative": None,
+            "inference_provider": "Failed (GPU Unavailable)",
+            "analysis_mode": "Failed",
+            "validation_status": "GPU_UNAVAILABLE",
+            "validation_error": last_error or "Remote GPU inference bridge is offline or unavailable.",
+            "retry_count": attempt - 1,
+            "error": "GPU_UNAVAILABLE"
         }
 
     @classmethod

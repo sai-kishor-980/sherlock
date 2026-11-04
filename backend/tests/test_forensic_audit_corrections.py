@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import pytest
 
+from app.services.agent_barrier_service import AgentBarrierService
 from app.services.synthesizer_service import ForensicSynthesizerService
 from app.services.graph_service import EvidenceGraphService
 
@@ -22,11 +23,27 @@ def case_id():
     return "CASE_ALL5_F1A5D2"
 
 
+def _setup_barrier_for_case(case_id: str):
+    """Create valid findings for all five domains so the barrier is satisfied."""
+    findings = []
+    for domain in ["network", "memory", "disk", "logs", "registry"]:
+        findings.append({
+            "case_id": case_id,
+            "domain": domain,
+            "finding_id": f"FIND-{domain.upper()}-001",
+            "classification": "BENIGN",
+            "confidence": 0.80,
+            "is_examination_status": False,
+        })
+    AgentBarrierService.evaluate_five_agent_barrier(case_id, findings)
+
+
 def test_malfind_findings_deduplicated_by_pid(case_id):
     """
     Verifies that multiple VAD allocations for the same process (e.g. winlogon.exe)
     are consolidated into a single finding per PID rather than spamming duplicate findings.
     """
+    _setup_barrier_for_case(case_id)
     res = ForensicSynthesizerService.synthesize_case(case_id)
     findings = res["findings"]
 
@@ -50,6 +67,7 @@ def test_process_injection_hypothesis_confidence_bound(case_id):
     Verifies that unconfirmed memory allocations are classified as CORROBORATED_HYPOTHESIS
     with confidence strictly within [0.80, 0.85], NOT over-claimed as 0.98 malicious facts.
     """
+    _setup_barrier_for_case(case_id)
     res = ForensicSynthesizerService.synthesize_case(case_id)
     findings = res["findings"]
 
@@ -65,6 +83,7 @@ def test_usb_registration_not_exfiltration(case_id):
     Verifies that USBSTOR device registration in registry is classified as hardware/peripheral telemetry (T1200),
     not prematurely labeled as confirmed data exfiltration (T1052.001).
     """
+    _setup_barrier_for_case(case_id)
     res = ForensicSynthesizerService.synthesize_case(case_id)
     findings = res["findings"]
 
@@ -83,6 +102,7 @@ def test_network_pcap_actual_packet_tuples(case_id):
     Verifies that network correlations reference the real packet captures:
     malicious-c2-test.corp.net -> 198.51.100.42 (not fabricated example.com or 93.184.216.34).
     """
+    _setup_barrier_for_case(case_id)
     res = ForensicSynthesizerService.synthesize_case(case_id)
     correlations = res["correlations"]
 
@@ -103,6 +123,11 @@ def test_graph_metrics_epistemic_integrity(case_id):
     - All CORROBORATED_HYPOTHESIS edges have confidence <= 0.85.
     - Graph is directed and reproducible.
     """
+    _setup_barrier_for_case(case_id)
+    res = ForensicSynthesizerService.synthesize_case(case_id)
+    # Synthesis may be BLOCKED_GPU_UNAVAILABLE in environments without remote GPU;
+    # the response is still cached to disk for graph retrieval.
+    assert res["status"] in ("COMPLETED", "BLOCKED_GPU_UNAVAILABLE"), f"Unexpected status: {res.get('status')}"
     G = EvidenceGraphService.build_case_evidence_graph(case_id)
     metrics = EvidenceGraphService.get_graph_metrics(G)
 

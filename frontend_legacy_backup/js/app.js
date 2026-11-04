@@ -1205,21 +1205,24 @@ function renderArtifactBrowser(caseObj, artifactData) {
   const getCatTag = (catName, cat) => {
     const l = (catName || "").toLowerCase();
     if (l.includes("network") || l.includes("pcap") || l.includes("net")) {
-      return { tag: "NETWORK", color: "#7c3aed", bg: "#f5f3ff", agent: "Network Agent", member: "Pranay" };
+      return { tag: "NETWORK", color: "#7c3aed", bg: "#f5f3ff", agent: "Network Forensics Agent", role: "Network Packets & Protocols" };
     }
     if (l.includes("memory") || l.includes("ram")) {
-      return { tag: "MEMORY", color: "#1d4ed8", bg: "#eff6ff", agent: "Memory Agent", member: "Bharath" };
+      return { tag: "MEMORY", color: "#1d4ed8", bg: "#eff6ff", agent: "Memory Analysis Agent", role: "Volatile RAM & Kernel" };
     }
     if (l.includes("disk")) {
-      return { tag: "DISK", color: "#059669", bg: "#ecfdf5", agent: "Disk Agent", member: "Aswith" };
+      return { tag: "DISK", color: "#059669", bg: "#ecfdf5", agent: "Disk & Filesystem Agent", role: "Filesystem & Artifacts" };
     }
     if (l.includes("log") || l.includes("event") || l.includes("evt")) {
-      return { tag: "LOGS", color: "#0891b2", bg: "#ecfeff", agent: "Log Agent", member: "Sanhith" };
+      return { tag: "LOGS", color: "#0891b2", bg: "#ecfeff", agent: "Event Logs Agent", role: "Security & Sysmon Telemetry" };
     }
     if (l.includes("reg")) {
-      return { tag: "REGISTRY", color: "#d97706", bg: "#fffbeb", agent: "Registry Agent", member: "Kishor" };
+      return { tag: "REGISTRY", color: "#d97706", bg: "#fffbeb", agent: "Windows Registry Agent", role: "Registry Hives & Keys" };
     }
-    return { tag: "ARTIFACT", color: "#475569", bg: "#f1f5f9", agent: (cat && cat.agent_name) || "Specialist Agent", member: (cat && cat.team_member) || "Forensic Lab" };
+    if (l.includes("email") || l.includes("mail")) {
+      return { tag: "EMAIL", color: "#0284c7", bg: "#f0f9ff", agent: "Email & Communication Agent", role: "Messages & Attachments" };
+    }
+    return { tag: "ARTIFACT", color: "#475569", bg: "#f1f5f9", agent: (cat && cat.agent_name) || "Specialist Agent", role: (cat && cat.role) || "Forensic Lab" };
   };
 
   const categoriesHTML = categories.map(cat => {
@@ -1251,7 +1254,7 @@ function renderArtifactBrowser(caseObj, artifactData) {
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <span style="font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: ${tagInfo.bg}; color: ${tagInfo.color};">${tagInfo.tag}</span>
             <span style="font-weight: 700; font-size: 0.86rem; color: #0f172a;">${escapeHTML(tagInfo.agent)}</span>
-            <span style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 1px 7px; border-radius: 12px; font-weight: 600;">👤 ${escapeHTML(tagInfo.member)}</span>
+            <span style="font-size: 0.72rem; color: #475569; background: #f1f5f9; padding: 1px 7px; border-radius: 12px; font-weight: 600;">⚙️ ${escapeHTML(tagInfo.role || 'Active Agent')}</span>
           </div>
           <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 0.72rem; font-weight: 700;">${files.length} output JSON file${files.length === 1 ? '' : 's'}</span>
         </div>
@@ -1261,6 +1264,21 @@ function renderArtifactBrowser(caseObj, artifactData) {
       </div>
     `;
   }).join('');
+
+  const activeAgentCardsHTML = categories.length > 0
+    ? categories.map(c => {
+        const t = getCatTag(c.category, c);
+        return `
+          <div style="background: rgba(255,255,255,0.08); border-radius: 6px; padding: 5px 10px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(255,255,255,0.12);">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 0.85rem;">🤖</span>
+              <strong style="color: #f8fafc; font-size: 0.76rem;">${escapeHTML(t.agent)}</strong>
+            </div>
+            <span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${c.files ? c.files.length : 0} Contract${c.files && c.files.length === 1 ? '' : 's'}</span>
+          </div>
+        `;
+      }).join('')
+    : `<div style="grid-column: 1 / -1; color: #94a3b8; font-size: 0.78rem; font-style: italic;">No domain artifacts extracted yet for this evidence. Click 'Extract Artifacts' to run specialized parsers.</div>`;
 
   const evidenceFilesHTML = evidences.length > 0
     ? evidences.map(ev => `
@@ -1283,26 +1301,12 @@ function renderArtifactBrowser(caseObj, artifactData) {
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           <span style="font-size: 1rem;">👑</span>
           <span style="font-weight: 800; font-size: 0.88rem; letter-spacing: 0.02em;">Supervisor Multi-Agent Orchestrator</span>
-          <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.25); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); padding: 1px 7px; border-radius: 9999px; font-weight: 700;">Qwen Powered • LoRA Orchestrated</span>
+          <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.25); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); padding: 1px 7px; border-radius: 9999px; font-weight: 700;">Dynamic Agent Activation</span>
         </div>
-        <span style="font-size: 0.72rem; color: #a5f3fc; font-family: 'JetBrains Mono', monospace;">5 Domain Agents Active</span>
+        <span style="font-size: 0.72rem; color: #a5f3fc; font-family: 'JetBrains Mono', monospace;">${categories.length} Active Domain Agent${categories.length === 1 ? '' : 's'}</span>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.45rem; font-size: 0.74rem;">
-        <div style="background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; gap: 5px;">
-          <span>🌐</span> <strong>Pranay</strong> <span style="color: #94a3b8; font-size: 0.7rem;">(Network)</span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; gap: 5px;">
-          <span>🧠</span> <strong>Bharath</strong> <span style="color: #94a3b8; font-size: 0.7rem;">(Memory)</span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; gap: 5px;">
-          <span>💾</span> <strong>Aswith</strong> <span style="color: #94a3b8; font-size: 0.7rem;">(Disk)</span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; gap: 5px;">
-          <span>📜</span> <strong>Sanhith</strong> <span style="color: #94a3b8; font-size: 0.7rem;">(Logs)</span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; gap: 5px;">
-          <span>🗝️</span> <strong>Kishor</strong> <span style="color: #94a3b8; font-size: 0.7rem;">(Registry)</span>
-        </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.45rem; font-size: 0.74rem;">
+        ${activeAgentCardsHTML}
       </div>
     </div>
 
@@ -2077,6 +2081,10 @@ window.handleCreateCasePageSubmit = async function(e) {
         loadOverviewData();
         window.switchWorkspaceSection("sec-cases");
       } catch (err) {
+        if (String(err.message || "").includes("credentials") || String(err.message || "").includes("Session expired") || String(err.message || "").includes("401")) {
+          HMACFR_API.handleUnauthorized("Your session has expired. Please sign in again.");
+          return;
+        }
         showSherlockNotice("Action Failed", "Error creating case: " + err.message, true);
       }
     }
@@ -2405,10 +2413,18 @@ function showLoginScreen() {
 }
 
 window.handleSessionExpired = function(msg) {
+  const noticeModal = document.getElementById("sherlock-custom-notice-modal");
+  if (noticeModal) noticeModal.style.display = "none";
+  const overlay = document.getElementById("forensic-dialog-overlay");
+  if (overlay) overlay.style.display = "none";
+
   showLoginPage();
+  if (typeof window.showForensicToast === "function") {
+    window.showForensicToast(msg || "Session expired. Please sign in again.", "warning", 5000);
+  }
   const errorAlert = document.getElementById("login-error");
   if (errorAlert) {
-    errorAlert.textContent = msg || "Session expired. Please log in again.";
+    errorAlert.textContent = msg || "Session expired. Please sign in again.";
     errorAlert.className = "alert alert-danger";
     errorAlert.style.display = "block";
   }
@@ -3095,6 +3111,11 @@ function setupEventListeners() {
 
         showSherlockNotice("Case Initialized Successfully", `Investigation Case "${caseName}" has been successfully created and registered in the vault.`);
       } catch (err) {
+        if (String(err.message || "").includes("credentials") || String(err.message || "").includes("Session expired") || String(err.message || "").includes("401")) {
+          closeCreateCaseModal();
+          HMACFR_API.handleUnauthorized("Your session has expired. Please sign in again.");
+          return;
+        }
         showSherlockNotice("Case Initialization Failed", err.message || "Error creating case.", true);
       } finally {
         if (submitBtn) submitBtn.disabled = false;
@@ -4866,19 +4887,19 @@ function handleAnalysisWebSocketMessage(msg) {
   if (logLower.includes("supervisor") || logLower.includes("dispatch") || stgNum === 0) {
     setAgentCard("supervisor", "Running", "Orchestrating domain agents", Math.min(progress * 1.5, 95));
   }
-  if (logLower.includes("pcap") || logLower.includes("network") || logLower.includes("dns") || logLower.includes("pranay")) {
+  if (logLower.includes("pcap") || logLower.includes("network") || logLower.includes("dns")) {
     setAgentCard("network", "Running", "Extracting PCAP flows, DNS & sockets", Math.min(progress * 1.3, 95));
   }
-  if (logLower.includes("memory") || logLower.includes("volatility") || logLower.includes("bharath")) {
+  if (logLower.includes("memory") || logLower.includes("volatility")) {
     setAgentCard("memory", "Running", "Scanning processes & VAD injections", Math.min(progress * 1.2, 95));
   }
-  if (logLower.includes("disk") || logLower.includes("mft") || logLower.includes("aswith")) {
+  if (logLower.includes("disk") || logLower.includes("mft")) {
     setAgentCard("disk", "Running", "Parsing MFT, LNK & Prefetch records", Math.min(progress * 1.2, 95));
   }
-  if (logLower.includes("log") || logLower.includes("sysmon") || logLower.includes("sanhith")) {
+  if (logLower.includes("log") || logLower.includes("sysmon")) {
     setAgentCard("log", "Running", "Analyzing security logs & PowerShell", Math.min(progress * 1.1, 95));
   }
-  if (logLower.includes("registry") || logLower.includes("kishor") || logLower.includes("software")) {
+  if (logLower.includes("registry") || logLower.includes("software")) {
     setAgentCard("registry", "Running", "Parsing USB history & Run keys", Math.min(progress * 1.1, 95));
   }
   if (logLower.includes("correlat") || logLower.includes("qwen") || logLower.includes("synthes") || stgNum >= 3) {
@@ -4956,6 +4977,13 @@ window.loadAnalysisSection = async function() {
     const completionBanner = document.getElementById("analysis-completion-banner");
 
     function setAgentCard(agentKey, status, activity, pVal, badgeClass) {
+      const cardEl = document.getElementById(`agent-card-${agentKey}`);
+      if (cardEl && status === "HIDDEN") {
+        cardEl.style.display = "none";
+        return;
+      }
+      if (cardEl) cardEl.style.display = "";
+
       const sEl = document.getElementById(`agent-status-${agentKey}`);
       if (sEl) {
         sEl.textContent = status;
@@ -4975,6 +5003,19 @@ window.loadAnalysisSection = async function() {
       return;
     }
 
+    // Determine active domains from evidence and synthesized artifacts
+    let caseEvidences = [];
+    try {
+      caseEvidences = await HMACFR_API.getCaseEvidences(activeCase.case_id);
+    } catch (_) {}
+
+    const evidenceTypes = (caseEvidences || []).map(e => ((e.type || '') + ' ' + (e.original_filename || '')).toLowerCase());
+    const hasNetEvidence = evidenceTypes.some(t => t.includes('pcap') || t.includes('network'));
+    const hasMemEvidence = evidenceTypes.some(t => t.includes('raw') || t.includes('mem') || t.includes('dmp') || t.includes('vmem'));
+    const hasDiskEvidence = evidenceTypes.some(t => t.includes('e01') || t.includes('dd') || t.includes('img') || t.includes('disk') || t.includes('001'));
+    const hasLogEvidence = evidenceTypes.some(t => t.includes('evtx') || t.includes('log'));
+    const hasRegEvidence = evidenceTypes.some(t => t.includes('reg') || t.includes('hive') || t.includes('sam') || t.includes('system'));
+
     const synth = activeCase.synthesized_data;
     const hasCompleted = synth && (
       (synth.findings && synth.findings.length > 0) ||
@@ -4982,13 +5023,45 @@ window.loadAnalysisSection = async function() {
     );
 
     if (hasCompleted) {
-      setAgentCard("supervisor", "Complete", "Orchestrated 5 domain agents", 100, "badge-emerald");
-      setAgentCard("network", "Complete", "Network streams parsed (Pranay)", 100, "badge-emerald");
-      setAgentCard("memory", "Complete", "Memory dumps analyzed (Bharath)", 100, "badge-emerald");
-      setAgentCard("disk", "Complete", "Disk & MFT records parsed (Aswith)", 100, "badge-emerald");
-      setAgentCard("log", "Complete", "Log telemetry correlated (Sanhith)", 100, "badge-emerald");
-      setAgentCard("registry", "Complete", "Registry & USB analyzed (Kishor)", 100, "badge-emerald");
+      setAgentCard("supervisor", "Complete", "Investigation synthesized", 100, "badge-emerald");
       setAgentCard("correlation", "Complete", "Structured Investigation State (SIS)", 100, "badge-emerald");
+
+      const artMap = synth.artifacts || {};
+      const hasNetArt = artMap.network_traffic && artMap.network_traffic.count > 0;
+      const hasMemArt = (artMap.memory_processes && artMap.memory_processes.count > 0) || (artMap.memory_injections && artMap.memory_injections.count > 0);
+      const hasDiskArt = artMap.execution_prefetch && artMap.execution_prefetch.count > 0;
+      const hasRegArt = (artMap.persistence_run_keys && artMap.persistence_run_keys.count > 0) || (artMap.usb_artifacts && artMap.usb_artifacts.count > 0);
+
+      if (hasNetEvidence || hasNetArt) {
+        setAgentCard("network", "Complete", "Network streams parsed", 100, "badge-emerald");
+      } else {
+        setAgentCard("network", "HIDDEN");
+      }
+
+      if (hasMemEvidence || hasMemArt) {
+        setAgentCard("memory", "Complete", "Memory dumps analyzed", 100, "badge-emerald");
+      } else {
+        setAgentCard("memory", "HIDDEN");
+      }
+
+      if (hasDiskEvidence || hasDiskArt) {
+        setAgentCard("disk", "Complete", "Disk & filesystem records parsed", 100, "badge-emerald");
+      } else {
+        setAgentCard("disk", "HIDDEN");
+      }
+
+      if (hasLogEvidence) {
+        setAgentCard("log", "Complete", "Log telemetry correlated", 100, "badge-emerald");
+      } else {
+        setAgentCard("log", "HIDDEN");
+      }
+
+      if (hasRegEvidence || hasRegArt) {
+        setAgentCard("registry", "Complete", "Registry & USB analyzed", 100, "badge-emerald");
+      } else {
+        setAgentCard("registry", "HIDDEN");
+      }
+
       if (completionBanner) completionBanner.style.display = "flex";
 
       const countdownHero = document.getElementById("analysis-countdown-hero");
@@ -5012,9 +5085,48 @@ window.loadAnalysisSection = async function() {
       }
     } else {
       setAgentCard("supervisor", "READY", "Supervisor ready for dispatch", 0, "badge-cyan");
-      ["network", "memory", "disk", "log", "registry", "correlation"].forEach(k => {
-        setAgentCard(k, "WAITING", "Awaiting supervisor trigger", 0, "badge-secondary");
-      });
+      setAgentCard("correlation", "WAITING", "Awaiting cross-domain fusion", 0, "badge-secondary");
+
+      // Hide cards for domains without evidence, show WAITING/READY for domains with evidence
+      if (hasNetEvidence) {
+        setAgentCard("network", "READY", "PCAP streams awaiting analysis", 0, "badge-cyan");
+      } else if (evidenceTypes.length > 0) {
+        setAgentCard("network", "HIDDEN");
+      } else {
+        setAgentCard("network", "WAITING", "Awaiting evidence ingestion", 0, "badge-secondary");
+      }
+
+      if (hasMemEvidence) {
+        setAgentCard("memory", "READY", "RAM dump awaiting analysis", 0, "badge-cyan");
+      } else if (evidenceTypes.length > 0) {
+        setAgentCard("memory", "HIDDEN");
+      } else {
+        setAgentCard("memory", "WAITING", "Awaiting evidence ingestion", 0, "badge-secondary");
+      }
+
+      if (hasDiskEvidence) {
+        setAgentCard("disk", "READY", "Disk volume awaiting analysis", 0, "badge-cyan");
+      } else if (evidenceTypes.length > 0) {
+        setAgentCard("disk", "HIDDEN");
+      } else {
+        setAgentCard("disk", "WAITING", "Awaiting evidence ingestion", 0, "badge-secondary");
+      }
+
+      if (hasLogEvidence) {
+        setAgentCard("log", "READY", "Event logs awaiting analysis", 0, "badge-cyan");
+      } else if (evidenceTypes.length > 0) {
+        setAgentCard("log", "HIDDEN");
+      } else {
+        setAgentCard("log", "WAITING", "Awaiting evidence ingestion", 0, "badge-secondary");
+      }
+
+      if (hasRegEvidence) {
+        setAgentCard("registry", "READY", "Registry hives awaiting analysis", 0, "badge-cyan");
+      } else if (evidenceTypes.length > 0) {
+        setAgentCard("registry", "HIDDEN");
+      } else {
+        setAgentCard("registry", "WAITING", "Awaiting evidence ingestion", 0, "badge-secondary");
+      }
       if (completionBanner) completionBanner.style.display = "none";
 
       const countdownHero = document.getElementById("analysis-countdown-hero");

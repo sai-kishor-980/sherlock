@@ -137,7 +137,47 @@
     // 2. Render Timeline
     renderTimeline(timeline);
 
-    // 3. Render Artifact Explorer
+    // 3. Configure and Render Artifact Explorer Subtabs dynamically
+    const availableCategories = (data.artifacts && typeof data.artifacts === 'object')
+      ? Object.keys(data.artifacts).filter(k => {
+          const item = data.artifacts[k];
+          return item && (item.count > 0 || (item.records && item.records.length > 0));
+        })
+      : [];
+
+    document.querySelectorAll(".art-subtab-btn").forEach(btn => {
+      const onclickAttr = btn.getAttribute("onclick") || "";
+      const matches = onclickAttr.match(/switchArtifactSubtab\(['"]([^'"]+)['"]\)/);
+      if (matches && matches[1]) {
+        const catKey = matches[1];
+        if (availableCategories.includes(catKey)) {
+          btn.style.display = "";
+        } else {
+          btn.style.display = "none";
+        }
+      }
+    });
+
+    if (availableCategories.length > 0) {
+      if (!availableCategories.includes(activeArtifactCategory)) {
+        activeArtifactCategory = availableCategories[0];
+      }
+    }
+
+    // Highlight the active button
+    document.querySelectorAll(".art-subtab-btn").forEach(btn => {
+      const onclickAttr = btn.getAttribute("onclick") || "";
+      if (onclickAttr.includes(`'${activeArtifactCategory}'`) || onclickAttr.includes(`"${activeArtifactCategory}"`)) {
+        btn.classList.add("active");
+        btn.style.background = "var(--accent-emerald-dim)";
+        btn.style.borderColor = "var(--accent-emerald)";
+      } else {
+        btn.classList.remove("active");
+        btn.style.background = "";
+        btn.style.borderColor = "";
+      }
+    });
+
     renderArtifactTable(activeArtifactCategory);
 
     // 4. Render Findings

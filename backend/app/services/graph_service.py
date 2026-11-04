@@ -97,10 +97,12 @@ class EvidenceGraphService:
 
         case_dir = cls.get_case_output_dir(case_id)
         report_file = case_dir / "synthesized_report.json"
-        report_data = {}
         if report_file.exists():
             with open(report_file, "r", encoding="utf-8") as f:
                 report_data = json.load(f)
+        else:
+            # No cached synthesized report; graph retrieval does not trigger synthesis.
+            report_data = {"artifacts": {}, "findings": [], "correlations": []}
 
         # 2. Add Artifact Contract Nodes (extracted tables)
         artifacts_dir = case_dir / "extracted_artifacts"
@@ -847,3 +849,86 @@ class EvidenceGraphService:
                 })
 
         return traces
+
+    @classmethod
+    def query_subgraph(
+        cls,
+        case_id: str,
+        query: str,
+        max_hops: int = 2,
+        max_nodes: int = 30
+    ) -> Dict[str, Any]:
+        """
+        Traverses the Evidence Graph to extract a 2-hop causal subgraph matching investigator query entities.
+        Implements Technical Innovation: Graph-Augmented RAG (G-RAG) from Sherlock architecture.
+        """
+        G = cls.load_graph(case_id)
+        if G is None:
+            G = cls.build_case_evidence_graph(case_id)
+            cls.save_graph(G, case_id)
+
+        if not G or G.number_of_nodes() == 0:
+            return {"nodes": [], "edges": [], "matched_seed_nodes": []}
+
+        tokens = set(t.lower() for t in query.replace("/", " ").replace("-", " ").split() if len(t) > 2)
+        seed_nodes = set()
+
+        for n, data in G.nodes(data=True):
+            node_str = f"{n} {data.get('label', '')} {data.get('title', '')} {data.get('technique_id', '')} {data.get('filename', '')} {data.get('entity_type', '')}".lower()
+            if any(token in node_str for token in tokens):
+                seed_nodes.add(n)
+
+        # Fallback if no specific seed tokens matched: pick findings/attack nodes
+        if not seed_nodes:
+            for n, data in G.nodes(data=True):
+                if data.get("entity_type") in ("finding", "attack_technique"):
+                    seed_nodes.add(n)
+                if len(seed_nodes) >= 3:
+                    break
+
+        subgraph_nodes = set(seed_nodes)
+        current_frontier = set(seed_nodes)
+
+        for _ in range(max_hops):
+            next_frontier = set()
+            for n in current_frontier:
+                if n in G:
+                    for succ in G.successors(n):
+                        next_frontier.add(succ)
+                    for pred in G.predecessors(n):
+                        next_frontier.add(pred)
+            subgraph_nodes.update(next_frontier)
+            current_frontier = next_frontier
+            if len(subgraph_nodes) >= max_nodes:
+                break
+
+        # Extract subgraph
+        selected_nodes = list(subgraph_nodes)[:max_nodes]
+        subgraph = G.subgraph(selected_nodes)
+
+        nodes_list = []
+        for n, data in subgraph.nodes(data=True):
+            nodes_list.append({
+                "id": str(n),
+                "label": data.get("label", str(n)),
+                "entity_type": data.get("entity_type", "unknown"),
+                "confidence": data.get("confidence", 1.0),
+                "risk_level": data.get("risk_level", "INFO"),
+                "is_seed": n in seed_nodes
+            })
+
+        edges_list = []
+        for u, v, data in subgraph.edges(data=True):
+            edges_list.append({
+                "source": str(u),
+                "target": str(v),
+                "relationship_type": data.get("relationship_type", "relates_to"),
+                "nature": data.get("nature", "OBSERVED_FACT"),
+                "confidence": data.get("confidence", 1.0)
+            })
+
+        return {
+            "nodes": nodes_list,
+            "edges": edges_list,
+            "matched_seed_nodes": list(seed_nodes)
+        }

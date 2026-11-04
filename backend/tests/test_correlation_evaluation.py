@@ -13,11 +13,32 @@ Covers:
 from pathlib import Path
 import pytest
 
+from app.services.agent_barrier_service import AgentBarrierService
 from app.services.synthesizer_service import ForensicSynthesizerService
-from app.cli.evaluate_correlation_pipeline import CorrelationEvaluator, match_correlation_to_pair
+from app.services.supervisor_service import SupervisorService
+from app.cli.evaluate_correlation_pipeline import (
+    CorrelationEvaluator,
+    CASE_MAPPING,
+    match_correlation_to_pair,
+)
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "correlation_datasets"
 PILOT_DATASET = FIXTURES_DIR / "pilot_phase1c2_audited_expanded_dataset.json"
+
+
+def _setup_barrier_for_case(case_id: str):
+    """Create valid findings for all five domains so the barrier is satisfied."""
+    findings = []
+    for domain in ["network", "memory", "disk", "logs", "registry"]:
+        findings.append({
+            "case_id": case_id,
+            "domain": domain,
+            "finding_id": f"FIND-{domain.upper()}-001",
+            "classification": "BENIGN",
+            "confidence": 0.80,
+            "is_examination_status": False,
+        })
+    AgentBarrierService.evaluate_five_agent_barrier(case_id, findings)
 
 
 def test_pipeline_reproducible_evaluation_metrics():
@@ -30,6 +51,10 @@ def test_pipeline_reproducible_evaluation_metrics():
     - Zero false negatives (Recall = 1.0)
     """
     assert PILOT_DATASET.exists(), f"Missing dataset fixture: {PILOT_DATASET}"
+    
+    # Set up barrier state for all investigation cases in the dataset
+    for inv_id, dir_name in CASE_MAPPING.items():
+        _setup_barrier_for_case(dir_name)
     
     result = CorrelationEvaluator.evaluate(PILOT_DATASET)
     summary = result["summary"]
@@ -53,6 +78,7 @@ def test_nested_evidence_discovery_standalone_artifact_test():
     resulting in 0 ingested artifacts and 0 generated correlations.
     Verifies that nested discovery discovers disk artifacts and generates correlations.
     """
+    _setup_barrier_for_case("Standalone Artifact Test")
     res = ForensicSynthesizerService.synthesize_case("Standalone Artifact Test")
     
     # Check that disk ingestion discovered artifacts
@@ -71,6 +97,7 @@ def test_scm_service_persistence_correlation_in_disk2():
     correlations for HdAudio.sys and e1i63x64.sys in DISK_2, while cross-service mismatches
     are not falsely generated.
     """
+    _setup_barrier_for_case("DISK_2")
     res = ForensicSynthesizerService.synthesize_case("DISK_2")
     corrs = res.get("correlations", [])
     

@@ -12,14 +12,13 @@ class Settings(BaseSettings):
     ENCRYPTION_SECRET_KEY: str = os.getenv("ENCRYPTION_SECRET_KEY", os.getenv("SECRET_KEY", "super-secret-hmacfr-key-change-in-production"))
     HASH_ALGORITHM: str = "SHA256"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
     EVENT_BROKER_TYPE: str = os.getenv("EVENT_BROKER_TYPE", "memory")
     
     # CORS Settings
     CORS_ORIGINS: list = ["*"]
 
     # Paths
-
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     UPLOADS_DIR: str = os.path.join(BASE_DIR, "uploads")
     EVIDENCE_VAULT_DIR: str = os.path.join(BASE_DIR, "evidence_vault")
@@ -34,6 +33,13 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "sherlock2026")
     NEO4J_DATABASE: str = os.getenv("NEO4J_DATABASE", "neo4j")
     NEO4J_ENABLED: bool = os.getenv("NEO4J_ENABLED", "true").lower() in ("true", "1", "yes")
+
+    # Remote GPU Colab Inference Bridge
+    COLAB_GPU_INFERENCE_URL: str = os.getenv("COLAB_GPU_INFERENCE_URL", "").strip()
+    SHERLOCK_REMOTE_TOKEN: str = os.getenv("SHERLOCK_REMOTE_TOKEN", "").strip()
+
+    # ChromaDB & RAG Configuration
+    CHROMADB_SIMILARITY_THRESHOLD: float = float(os.getenv("CHROMADB_SIMILARITY_THRESHOLD", "0.45"))
 
     model_config = ConfigDict(case_sensitive=True, extra="ignore")
 

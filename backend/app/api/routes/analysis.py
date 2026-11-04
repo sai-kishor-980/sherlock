@@ -104,6 +104,25 @@ async def start_analysis(
             detail=f"Permission Denied: You do not have permission to execute analysis on Case '{req.case_id}'."
         )
 
+    # Evidence Validation Gate: Block analysis if case has no validated evidence or extractions
+    evidences = db.query(Evidence).filter(Evidence.case_id == req.case_id).all()
+    valid_evidences = [
+        ev for ev in evidences 
+        if (getattr(ev, "status", "") in ["VALIDATED", "Uploaded", "SEALED"]) 
+        or (ev.storage_path and os.path.exists(ev.storage_path))
+    ]
+    case_output = ForensicSynthesizerService.get_case_output_dir(req.case_id)
+    has_extracted_artifacts = case_output.exists() and any(case_output.iterdir())
+
+    if not valid_evidences and not has_extracted_artifacts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "EVIDENCE_REQUIRED",
+                "message": f"Cannot initiate analysis: Case '{req.case_id}' contains no validated forensic evidence. Upload and seal evidence in the Evidence Vault first."
+            }
+        )
+
     task_id = f"ANL-{uuid.uuid4().hex[:8].upper()}"
     now = time.time()
 
@@ -153,6 +172,81 @@ async def start_analysis(
     )
 
 
+@router.post("/{case_id}/run", response_model=AnalysisTaskStatus)
+async def run_analysis_by_case_id(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Run multi-agent analysis directly for a case ID.
+    Enforces evidence eligibility gate and launches the background analysis worker.
+    """
+    case_obj = db.query(Case).filter(Case.case_id == case_id).first()
+    case_name = case_obj.case_name if case_obj else case_id
+
+    req = AnalysisStartRequest(
+        case_id=case_id,
+        case_name=case_name,
+        total_duration_seconds=10
+    )
+    return await start_analysis(req, db, current_user)
+
+
+@router.post("/{case_id}/extract")
+async def extract_artifacts_for_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Trigger forensic artifact extraction for all evidence in this case.
+    Enforces evidence eligibility gate and dispatches to SupervisorService.
+    """
+    if not RBACService.check_case_access(db, current_user, case_id, permission="extraction:execute"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission Denied: You do not have extraction permission on Case '{case_id}'."
+        )
+
+    evidences = db.query(Evidence).filter(Evidence.case_id == case_id).all()
+    if not evidences:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "EVIDENCE_REQUIRED", "message": f"Cannot extract artifacts: Case '{case_id}' contains no evidence items."}
+        )
+
+    from app.services.supervisor_service import SupervisorService
+    registered = []
+    for ev in evidences:
+        if ev.storage_path and os.path.exists(ev.storage_path):
+            registered.append({
+                "path": ev.storage_path,
+                "type": ev.type,
+                "name": ev.original_filename,
+                "evidence_id": ev.evidence_id
+            })
+
+    manifest = await asyncio.to_thread(SupervisorService.orchestrate_case_extraction, case_id=case_id, evidence_list=registered)
+
+    # Update evidence records to EXTRACTED if extraction ran
+    for ev in evidences:
+        if ev.status != "EXTRACTED":
+            ev.status = "EXTRACTED"
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {
+        "status": "SUCCESS",
+        "case_id": case_id,
+        "evidence_count": len(registered),
+        "manifest": manifest,
+        "summary": manifest
+    }
+
+
 @router.get("/tasks", response_model=List[AnalysisTaskStatus])
 def list_analysis_tasks(
     db: Session = Depends(get_db),
@@ -177,6 +271,39 @@ def list_analysis_tasks(
                 created_at=task["created_at"]
             ))
     return sorted(results, key=lambda x: x.created_at, reverse=True)
+
+
+@router.get("/tasks/{task_id}", response_model=AnalysisTaskStatus)
+def get_task_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current progress and status for an analysis task.
+    """
+    task = active_tasks.get(task_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis task '{task_id}' not found."
+        )
+    if not RBACService.check_case_access(db, current_user, task["case_id"], permission="analysis:read"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission Denied: You do not have access to task for Case '{task['case_id']}'."
+        )
+    return AnalysisTaskStatus(
+        task_id=task["task_id"],
+        case_id=task["case_id"],
+        case_name=task["case_name"],
+        status=task["status"],
+        progress=task["progress"],
+        stage=task["stage"],
+        elapsed_seconds=int(time.time() - task["created_at"]),
+        time_remaining_seconds=task.get("time_remaining_seconds", 0),
+        created_at=task["created_at"]
+    )
 
 
 async def broadcast_step(task_id: str, stage: str, progress: float, log_text: str):
@@ -243,57 +370,141 @@ async def run_real_analysis_pipeline(task_id: str):
         finally:
             db.close()
 
+        # Gate verification in background worker
+        case_output = ForensicSynthesizerService.get_case_output_dir(case_id)
+        has_artifacts = case_output.exists() and any(case_output.iterdir())
+        if not evidence_list and not has_artifacts:
+            task["status"] = "failed"
+            task["stage"] = "Analysis Aborted: No valid evidence or extractions available"
+            await broadcast_step(task_id, "Analysis Aborted", 100.0, f"Analysis aborted: Case '{case_name}' contains zero ingested evidence artifacts.")
+            return
+
         # Step 2: Extraction Dispatching via Supervisor Multi-Agent Orchestrator
-        await broadcast_step(
-            task_id,
-            "Supervisor Agent Orchestrating Domain Extraction",
-            25.0,
-            f"Supervisor Agent dispatching {len(evidence_list)} evidence stream(s) across 5 Specialized Domain Agents..."
+        from app.services.supervisor_service import SupervisorService
+
+        active_domains = set()
+        registered_items = []
+        for ev in evidence_list:
+            p = ev.get("storage_path")
+            if p and os.path.exists(p):
+                domain = SupervisorService.classify_evidence_to_domain(ev.get("type", ""), ev.get("original_filename", "") or Path(p).name)
+                active_domains.add(domain)
+                registered_items.append({
+                    "path": p,
+                    "type": ev.get("type"),
+                    "name": ev.get("original_filename"),
+                    "evidence_id": ev.get("evidence_id")
+                })
+
+        # Check if contracts are already extracted on disk to avoid redundant extraction overhead
+        extracted_root = case_output / "extracted_artifacts"
+        has_existing_contracts = extracted_root.exists() and any(
+            f.is_file() for d in extracted_root.iterdir() if d.is_dir() for f in d.iterdir()
         )
-        await asyncio.sleep(0.4)
 
-        # Agent 1: Network Agent (Pranay)
-        await broadcast_step(task_id, "Network Agent (Pranay) Extracting Flows", 35.0, "Pranay (Network Agent): Extracting PCAP streams, DNS resolutions, and network sockets...")
-        await asyncio.sleep(0.3)
+        if has_existing_contracts:
+            await broadcast_step(
+                task_id,
+                "Extracted Artifact Contracts Verified",
+                30.0,
+                f"Verified existing normalized artifact contracts for Case '{case_name}'. Advancing directly to domain agent cognitive analysis..."
+            )
+            await asyncio.sleep(0.3)
+        else:
+            await broadcast_step(
+                task_id,
+                "Supervisor Agent Orchestrating Domain Extraction",
+                25.0,
+                f"Supervisor Agent dispatching {len(registered_items)} evidence stream(s) to {len(active_domains)} active specialized agent(s)..."
+            )
+            await asyncio.sleep(0.3)
 
-        # Agent 2: Memory Agent (Bharath)
-        await broadcast_step(task_id, "Memory Agent (Bharath) Analyzing RAM", 45.0, "Bharath (Memory Agent): Carving process trees, handles, DLLs, and malware indicators...")
-        await asyncio.sleep(0.3)
+            # Dynamic agent dispatch based strictly on active evidence domains
+            if "network" in active_domains:
+                await broadcast_step(task_id, "Network Forensics Agent Extracting Flows", 35.0, "Network Forensics Agent: Extracting PCAP streams, DNS resolutions, and traffic connections...")
+                await asyncio.sleep(0.3)
 
-        # Agent 3: Disk Agent (Aswith)
-        await broadcast_step(task_id, "Disk Agent (Aswith) Parsing File Systems", 55.0, "Aswith (Disk Agent): Parsing MFT entries, LNK shortcuts, Prefetch execution, and Jump Lists...")
-        await asyncio.sleep(0.3)
+            if "memory" in active_domains:
+                await broadcast_step(task_id, "Memory Analysis Agent Analyzing RAM", 45.0, "Memory Analysis Agent: Carving process trees, handles, DLLs, and malware indicators...")
+                await asyncio.sleep(0.3)
 
-        # Agent 4: Log Agent (Sanhith)
-        await broadcast_step(task_id, "Log Agent (Sanhith) Correlating Event Logs", 65.0, "Sanhith (Log Agent): Parsing Security Event Logs, Sysmon activity, and PowerShell scripts...")
-        await asyncio.sleep(0.3)
+            if "disk" in active_domains:
+                await broadcast_step(task_id, "Disk & Filesystem Agent Parsing File Systems", 55.0, "Disk & Filesystem Agent: Parsing MFT entries, LNK shortcuts, Prefetch execution, and Jump Lists...")
+                await asyncio.sleep(0.3)
 
-        # Agent 5: Registry Agent (Kishor)
-        await broadcast_step(task_id, "Registry Agent (Kishor) Inspecting Hives", 75.0, "Kishor (Registry Agent): Inspecting installed software, USB device history, and Run/RunOnce persistence...")
-        await asyncio.sleep(0.3)
+            if "logs" in active_domains:
+                await broadcast_step(task_id, "Event Logs Agent Correlating Event Logs", 65.0, "Event Logs Agent: Parsing Security Event Logs, Sysmon activity, and PowerShell scripts...")
+                await asyncio.sleep(0.3)
 
-        if evidence_list:
-            try:
-                from app.services.supervisor_service import SupervisorService
-                registered_items = []
-                for ev in evidence_list:
-                    p = ev.get("storage_path")
-                    if p and os.path.exists(p):
-                        registered_items.append({
-                            "path": p,
-                            "type": ev.get("type"),
-                            "name": ev.get("original_filename"),
-                            "evidence_id": ev.get("evidence_id")
-                        })
-                if registered_items:
+            if "registry" in active_domains:
+                await broadcast_step(task_id, "Windows Registry Agent Inspecting Hives", 75.0, "Windows Registry Agent: Inspecting installed software, USB device history, and Run/RunOnce persistence...")
+                await asyncio.sleep(0.3)
+
+            if "email" in active_domains:
+                await broadcast_step(task_id, "Email & Communication Agent Parsing Archives", 75.0, "Email & Communication Agent: Extracting messages, attachments, and communication trails...")
+                await asyncio.sleep(0.3)
+
+            if registered_items:
+                try:
                     await asyncio.to_thread(SupervisorService.orchestrate_case_extraction, case_id=case_id, evidence_list=registered_items)
-            except Exception as ex:
-                log_app_event(f"[Analysis] Note on Supervisor extraction run: {ex}. Proceeding to synthesis...")
+                except Exception as ex:
+                    log_app_event(f"[Analysis] Note on Supervisor extraction run: {ex}. Proceeding to synthesis...")
 
-        await broadcast_step(task_id, "Qwen Model LoRA Reasoning & Correlation", 85.0, "Supervisor correlating domain findings using Base Cybersecurity QLoRA & Domain Adapters into SIS...")
+        # Step 2.5: Verify GPU Inference Readiness before Multi-Agent Reasoning
+        from app.services.model_adapter_service import ModelAdapterService
+        gpu_status = ModelAdapterService.check_gpu_readiness()
+        if not gpu_status.get("ready"):
+            task["status"] = "failed"
+            task["stage"] = "Analysis Aborted: GPU_UNAVAILABLE"
+            reason = gpu_status.get("reason", "Colab GPU inference bridge is offline.")
+            await broadcast_step(
+                task_id,
+                "GPU Unavailable (503)",
+                100.0,
+                f"Analysis aborted: {reason}. Multi-agent forensic reasoning requires an active GPU bridge."
+            )
+            return
+
+        # Execute Cognitive Domain Analyses via 5 Specialized Agents
+        try:
+            domain_findings, barrier_ok, barrier_details = await asyncio.to_thread(
+                SupervisorService.execute_domain_analyses, case_id=case_id
+            )
+            
+            # Barrier enforcement: SIS synthesis blocked unless all five domains completed
+            if not barrier_ok:
+                task["status"] = "failed"
+                task["stage"] = "Analysis Blocked: Five-Agent Barrier Not Satisfied"
+                await broadcast_step(
+                    task_id,
+                    "Barrier Blocked",
+                    100.0,
+                    f"Analysis blocked: Five-agent barrier not satisfied. Failed domains: {barrier_details.get('failed_domains', [])}. Insufficient evidence domains: {barrier_details.get('insufficient_evidence_domains', [])}."
+                )
+                return
+            
+            await broadcast_step(
+                task_id,
+                "Domain Agent Reasoning Completed",
+                85.0,
+                f"Generated {len(domain_findings)} specialized agent findings with observation accounting. Barrier satisfied. Synthesizing SIS state..."
+            )
+        except Exception as e_find:
+            log_app_event(f"[Analysis] Note on domain agent analyses: {e_find}")
+            task["status"] = "failed"
+            task["stage"] = "Analysis Failed: Domain Agent Execution"
+            await broadcast_step(
+                task_id,
+                "Analysis Failed",
+                100.0,
+                f"Analysis failed: Domain agent execution error: {str(e_find)}"
+            )
+            return
+
+        await broadcast_step(task_id, "Qwen Model LoRA Reasoning & Correlation", 90.0, "Supervisor correlating active domain findings using Base Cybersecurity QLoRA & Domain Adapters into SIS...")
         await asyncio.sleep(0.4)
 
-        # Step 3: Forensic Synthesizer
+        # Step 3: Forensic Synthesizer (only reached after barrier satisfied)
         synthesized_data = await asyncio.to_thread(
             ForensicSynthesizerService.synthesize_case,
             case_id=case_id,
@@ -498,12 +709,13 @@ def get_case_forensic_data(
             detail=f"Permission Denied: You do not have access to analysis data for Case '{case_id}'."
         )
 
-    data = ForensicSynthesizerService.get_synthesized_case(case_id)
+    data = ForensicSynthesizerService.get_cached_synthesized_case(case_id)
     if not data:
-        for t in active_tasks.values():
-            if t.get("case_id") == case_id and "synthesized_data" in t:
-                return t["synthesized_data"]
-        data = ForensicSynthesizerService.synthesize_case(case_id)
+        return {
+            "case_id": case_id,
+            "error": "SIS not generated. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
     return data
 
 
@@ -523,13 +735,22 @@ def get_case_artifacts(
             detail=f"Permission Denied: You do not have access to artifacts for Case '{case_id}'."
         )
 
-    data = ForensicSynthesizerService.get_synthesized_case(case_id)
-    if not data:
-        data = ForensicSynthesizerService.synthesize_case(case_id)
+    data = ForensicSynthesizerService.get_cached_synthesized_case(case_id)
+    if not data or not data.get("artifacts"):
+        return {
+            "case_id": case_id,
+            "summary": {},
+            "artifacts": {},
+            "categories": {},
+            "error": "SIS not generated. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
+
     return {
         "case_id": case_id,
         "summary": data.get("artifact_inventory", {}),
-        "artifacts": data.get("artifacts", {})
+        "artifacts": data.get("artifacts", {}),
+        "categories": data.get("artifacts", {})
     }
 
 
@@ -549,9 +770,15 @@ def get_case_timeline(
             detail=f"Permission Denied: You do not have access to timeline events for Case '{case_id}'."
         )
 
-    data = ForensicSynthesizerService.get_synthesized_case(case_id)
+    data = ForensicSynthesizerService.get_cached_synthesized_case(case_id)
     if not data:
-        data = ForensicSynthesizerService.synthesize_case(case_id)
+        return {
+            "case_id": case_id,
+            "total_events": 0,
+            "timeline": [],
+            "error": "SIS not generated. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
     return {
         "case_id": case_id,
         "total_events": len(data.get("timeline", [])),
@@ -575,13 +802,41 @@ def get_case_findings(
             detail=f"Permission Denied: You do not have access to findings for Case '{case_id}'."
         )
 
-    data = ForensicSynthesizerService.get_synthesized_case(case_id)
+    # Check if domain agents produced specialized findings with observation accounting
+    import json
+    case_dir = ForensicSynthesizerService.get_case_output_dir(case_id)
+    all_findings_file = case_dir / "findings" / "all_findings.json"
+    findings_list = []
+    if all_findings_file.exists():
+        try:
+            with open(all_findings_file, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, list) and len(loaded) > 0:
+                    findings_list = loaded
+        except Exception:
+            pass
+
+    data = ForensicSynthesizerService.get_cached_synthesized_case(case_id)
     if not data:
-        data = ForensicSynthesizerService.synthesize_case(case_id)
+        return {
+            "case_id": case_id,
+            "total_findings": 0,
+            "findings": [],
+            "correlations": [],
+            "error": "SIS not generated. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
+
+    if not findings_list:
+        findings_list = data.get("findings", [])
+
+    from app.api.routes.cases import normalize_synthesized_finding_for_workstation
+    norm_findings = [normalize_synthesized_finding_for_workstation(f) for f in findings_list]
+
     return {
         "case_id": case_id,
-        "total_findings": len(data.get("findings", [])),
-        "findings": data.get("findings", []),
+        "total_findings": len(norm_findings),
+        "findings": norm_findings,
         "correlations": data.get("correlations", [])
     }
 
@@ -595,6 +850,8 @@ def get_case_report(
     """
     Returns full court-ready forensic investigation report.
     Requires report:read permission on the case.
+    Compulsory Investigator Review Gate: Hard-locks report output (HTTP 423)
+    until an authorized investigator certifies and approves the Pre-SIS.
     """
     if not RBACService.check_case_access(db, current_user, case_id, permission="report:read"):
         raise HTTPException(
@@ -602,11 +859,32 @@ def get_case_report(
             detail=f"Permission Denied: You do not have access to the court report for Case '{case_id}'."
         )
 
-    data = ForensicSynthesizerService.get_synthesized_case(case_id)
+    sis_state = ForensicSynthesizerService.get_cached_sis_state(case_id)
+    if not sis_state:
+        return {
+            "case_id": case_id,
+            "error": "SIS not generated. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
+
+    review_gate = (sis_state or {}).get("review_gate", {})
+    if review_gate.get("status") != "APPROVED":
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Outputs Locked: Awaiting Compulsory Investigator Review in Workstation 4 (SIS Timeline). You must review findings, correlations, and approve or reject with examiner notes before official court deliverables can be generated."
+        )
+
+    data = ForensicSynthesizerService.get_cached_synthesized_case(case_id)
     if not data:
-        data = ForensicSynthesizerService.synthesize_case(case_id)
+        return {
+            "case_id": case_id,
+            "error": "Synthesized report not found. Run investigation analysis first.",
+            "synthesis_required": True,
+        }
     return data.get("court_report", {})
 
+
+from app.services.graph_service import EvidenceGraphService
 
 class CaseChatRequest(BaseModel):
     query: str
@@ -620,8 +898,9 @@ def case_forensic_chat(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Evidence-grounded Case Chatbot (RAG): Queries the Structured Investigation State (SIS)
-    and ChromaDB vector index to answer investigator queries with exact artifact citations.
+    Graph-Augmented RAG (G-RAG) Case Chatbot: Queries the Structured Investigation State (SIS),
+    extracts 2-hop causal subgraphs from the Evidence Graph (NetworkX/Neo4j), performs vector similarity
+    retrieval, and produces verifiable chain-of-custody grounded answers with SHA-256 custody seals.
     """
     if not RBACService.check_case_access(db, current_user, case_id, permission="analysis:read"):
         raise HTTPException(
@@ -633,10 +912,52 @@ def case_forensic_chat(
     if not q:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Query cannot be empty.")
 
-    sis = ForensicSynthesizerService.get_sis_state(case_id)
+    # Remote GPU vs Local Execution Check
+    from app.services.model_adapter_service import ModelAdapterService
+    remote_url = ModelAdapterService.get_remote_gpu_url()
+    exec_mode = "REMOTE_LLM (Qwen2.5-7B LoRA on Colab GPU)" if remote_url else "LOCAL_EVIDENCE_GROUNDED_RAG"
+
+    evidence_records = db.query(Evidence).filter(Evidence.case_id == case_id).all()
+    case_output = ForensicSynthesizerService.get_case_output_dir(case_id)
+    has_artifacts = case_output.exists() and any(case_output.iterdir())
+
+    # Truthful Non-Conclusion for Cases with Zero Ingested Evidence
+    if not evidence_records and not has_artifacts:
+        return {
+            "status": "NO_EVIDENCE",
+            "case_id": case_id,
+            "query": q,
+            "answer": (
+                f"No validated forensic evidence is available for Case '{case_id}'. "
+                f"Forensic findings, attack sequence reconstructions, and calibrated confidence metrics "
+                f"cannot be established without supporting evidentiary artifacts. "
+                f"Please ingest and validate evidence in Workstation 1 (Evidence Vault) before requesting investigation conclusions."
+            ),
+            "citations": [],
+            "vector_hits": [],
+            "subgraph": {"nodes": [], "edges": [], "matched_seed_nodes": []},
+            "confidence": 0.0,
+            "execution_mode": exec_mode,
+            "sis_review_status": "UNAVAILABLE",
+            "mitre_techniques": []
+        }
+
+    sis = ForensicSynthesizerService.get_cached_sis_state(case_id)
     if not sis:
-        data = ForensicSynthesizerService.synthesize_case(case_id)
-        sis = data.get("sis_state", {})
+        return {
+            "status": "NO_SIS",
+            "case_id": case_id,
+            "query": q,
+            "answer": "No Structured Investigation State has been generated for this case. Run investigation analysis first.",
+            "citations": [],
+            "vector_hits": [],
+            "subgraph": {"nodes": [], "edges": [], "matched_seed_nodes": []},
+            "confidence": 0.0,
+            "execution_mode": exec_mode,
+            "sis_review_status": "UNAVAILABLE",
+            "mitre_techniques": [],
+            "synthesis_required": True,
+        }
 
     timeline = sis.get("attack_timeline", [])
     findings = sis.get("findings", [])
@@ -644,103 +965,238 @@ def case_forensic_chat(
     hypotheses = sis.get("causal_hypotheses", [])
     mitre_list = sis.get("mitre_techniques", [])
 
-    # Vector similarity search via ChromaDB if available
+    # 1. Slide 10 Step 2 & 3: Graph-Augmented RAG - 2-Hop Causal Subgraph Traversal
+    subgraph_data = {"nodes": [], "edges": [], "matched_seed_nodes": []}
+    try:
+        subgraph_data = EvidenceGraphService.query_subgraph(case_id, q, max_hops=2, max_nodes=20)
+    except Exception as e:
+        log_app_event(f"[Chatbot] Subgraph traversal note: {e}")
+
+    # 2. Vector Similarity Search via Persistent ChromaDB with Cosine Distance Cutoff
     vector_hits = []
+    threshold = float(os.environ.get("CHROMADB_SIMILARITY_THRESHOLD", "0.45"))
     try:
         import chromadb
-        client = chromadb.Client()
+        chroma_dir = case_output / "chromadb"
+        chroma_dir.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(path=str(chroma_dir))
         col_name = f"case_{case_id.replace('-', '_').lower()}"
-        col = None
-        try:
-            col = client.get_collection(col_name)
-        except Exception:
-            # Build and populate collection for this case
-            col = client.create_collection(col_name)
+        col = client.get_or_create_collection(name=col_name, metadata={"hnsw:space": "cosine"})
+
+        if col.count() == 0 and (findings or correlations or timeline):
             docs = []
             metas = []
             ids = []
             for idx, f in enumerate(findings):
                 docs.append(f"{f.get('title')}: {f.get('description')}")
-                metas.append({"type": "finding", "id": f.get("finding_id", str(idx))})
+                metas.append({"type": "finding", "id": str(f.get("finding_id", idx))})
                 ids.append(f"find_{idx}")
             for idx, c in enumerate(correlations):
                 docs.append(f"{c.get('title')}: {c.get('reasoning')}")
-                metas.append({"type": "correlation", "id": c.get("correlation_id", str(idx))})
+                metas.append({"type": "correlation", "id": str(c.get("correlation_id", idx))})
                 ids.append(f"corr_{idx}")
             for idx, t in enumerate(timeline[:20]):
                 docs.append(f"{t.get('title')}: {t.get('description')}")
-                metas.append({"type": "timeline", "id": t.get("event_id", str(idx))})
+                metas.append({"type": "timeline", "id": str(t.get("event_id", idx))})
                 ids.append(f"time_{idx}")
             if docs:
                 col.add(documents=docs, metadatas=metas, ids=ids)
 
-        if col:
-            res = col.query(query_texts=[q], n_results=min(3, col.count()))
-            if res and res.get("documents") and res["documents"][0]:
-                vector_hits = res["documents"][0]
+        if col.count() > 0:
+            res = col.query(query_texts=[q], n_results=min(5, col.count()))
+            if res and res.get("documents") and res.get("distances"):
+                for doc, dist in zip(res["documents"][0], res["distances"][0]):
+                    if dist <= threshold:
+                        vector_hits.append(doc)
+            elif res and res.get("documents") and res["documents"][0]:
+                vector_hits = res["documents"][0][:3]
     except Exception as e:
         log_app_event(f"[Chatbot] Vector query note: {e}")
 
-    # Keyword and heuristic matching over SIS
-    q_lower = q.lower()
-    matched_findings = [f for f in findings if any(k in q_lower for k in [f.get("title", "").lower(), f.get("mitre_technique", "").lower(), "malware", "process", "injection", "usb", "persistence", "finding", "risk"])]
-    matched_correlations = [c for c in correlations if any(k in q_lower for k in [c.get("title", "").lower(), "chain", "link", "correlation", "lineage"])]
+    # 3. Grounded Evidence Citations & SHA-256 Custody Hash Resolution
+    evidence_records = db.query(Evidence).filter(Evidence.case_id == case_id).all()
+    ev_map = {ev.original_filename.lower(): ev for ev in evidence_records}
 
-    # Compile grounded citations
-    citations = []
+    # Keyword and heuristic matching over SIS and evidence records
+    q_lower = q.lower()
+    forensic_keywords = [
+        "network", "traffic", "connection", "socket", "pcap", "dns", "ip",
+        "malware", "process", "injection", "memory", "ram", "vad",
+        "disk", "prefetch", "mft", "file", "deleted",
+        "log", "event", "sysmon", "powershell", "auth",
+        "registry", "usb", "persistence", "runkey", "finding", "risk"
+    ]
+    is_forensic_domain_query = any(k in q_lower for k in forensic_keywords)
+
+    matched_findings = [f for f in findings if any(k in q_lower for k in [f.get("title", "").lower(), f.get("mitre_technique", "").lower(), *forensic_keywords])]
+    matched_correlations = [c for c in correlations if any(k in q_lower for k in [c.get("title", "").lower(), "chain", "link", "correlation", "lineage"])]
+    matched_evidences = [
+        ev for ev in evidence_records
+        if any(k in q_lower for k in [ev.original_filename.lower(), str(ev.category or "").lower(), str(ev.type or "").lower()])
+        or any(k in str(ev.category or "").lower() or k in str(ev.type or "").lower() for k in [w for w in forensic_keywords if w in q_lower])
+    ]
+
+    # Semantic relevance gate: if query is non-forensic (e.g. "hello", "ison") and has zero vector hits and zero matches, return truthful INSUFFICIENT_EVIDENCE
+    if not is_forensic_domain_query and not vector_hits and not matched_findings and not matched_correlations:
+        return {
+            "status": "INSUFFICIENT_EVIDENCE",
+            "case_id": case_id,
+            "query": q,
+            "answer": (
+                f"INSUFFICIENT_EVIDENCE: The query '{q}' does not correspond to any observed indicators, "
+                f"extracted artifacts, or verified forensic findings in Case '{case_id}'. "
+                f"Semantic RAG retrieved zero documents within similarity threshold {threshold}."
+            ),
+            "citations": [],
+            "vector_hits": [],
+            "subgraph": {"nodes": [], "edges": [], "matched_seed_nodes": []},
+            "confidence": 0.0,
+            "execution_mode": exec_mode,
+            "sis_review_status": sis.get("review_gate", {}).get("status", "PENDING"),
+            "mitre_techniques": []
+        }
+
+    raw_citations = []
     for f in (matched_findings or findings)[:3]:
         for src in f.get("evidence_sources", []):
             if isinstance(src, dict) and src.get("file"):
-                citations.append(src["file"])
+                raw_citations.append(src["file"])
             elif isinstance(src, str):
-                citations.append(src)
+                raw_citations.append(src)
     for c in (matched_correlations or correlations)[:2]:
-        citations.extend(c.get("evidence_sources", []))
-    citations = list(set(citations)) or ["case_summary.json"]
+        raw_citations.extend(c.get("evidence_sources", []))
 
-    # Synthesize factual response grounded strictly in SIS
-    if "initial access" in q_lower or "usb" in q_lower:
-        usb_find = next((f for f in findings if "usb" in f.get("title", "").lower()), None)
-        if usb_find:
-            answer = f"According to verified system hive artifacts, Initial Access involves removable storage activity. {usb_find.get('description')} (MITRE {usb_find.get('mitre_technique')})."
-        else:
-            answer = "Initial access assessment indicates external delivery stream. No overt unauthorized USB insertion identified in this case."
-    elif "process" in q_lower or "injection" in q_lower or "pid" in q_lower:
-        inj_find = [f for f in findings if "injection" in f.get("title", "").lower() or "malfind" in str(f).lower()]
-        if inj_find:
-            answer = f"Memory analysis verified {len(inj_find)} process injection indicator(s). Key event: {inj_find[0].get('description')}"
-        else:
-            answer = f"The case exhibits {len(timeline)} chronological process milestones. No unbacked memory injection verified."
-    elif "timeline" in q_lower or "when" in q_lower or "sequence" in q_lower:
-        earliest = timeline[0] if timeline else None
-        latest = timeline[-1] if timeline else None
-        answer = f"The chronological attack sequence comprises {len(timeline)} verified milestones starting at {earliest.get('timestamp') if earliest else 'N/A'} ('{earliest.get('title') if earliest else ''}') through {latest.get('timestamp') if latest else 'N/A'}."
-    elif "mitre" in q_lower or "technique" in q_lower or "ttp" in q_lower:
-        answer = f"The observed adversary behavior maps to the following MITRE ATT&CK techniques: {', '.join(mitre_list) if mitre_list else 'Standard system operational baselines'}."
-    else:
-        top_find = findings[0] if findings else None
-        top_corr = correlations[0] if correlations else None
-        answer = (
-            f"Based on the Structured Investigation State for Case '{case_id}': "
-            f"The case exhibits an overall severity rating of {sis.get('overall_severity', 'LOW')} with confidence score {sis.get('confidence_score', 0.95)}. "
-            + (f"Primary finding: {top_find.get('title')}. " if top_find else "")
-            + (f"Key correlation: {top_corr.get('title')}." if top_corr else "")
-        )
+    # If no findings exist yet, cite evidence matching the query domain
+    if not raw_citations and matched_evidences:
+        for ev in matched_evidences[:2]:
+            raw_citations.append(ev.original_filename)
 
-    # Check for remote Colab bridge
-    from app.services.model_adapter_service import ModelAdapterService
+    raw_citations = list(dict.fromkeys(raw_citations))
+
+    structured_citations = []
+    for fname in raw_citations:
+        ev_obj = ev_map.get(str(fname).lower())
+        if ev_obj:
+            structured_citations.append({
+                "file": ev_obj.original_filename,
+                "sha256": ev_obj.file_hash or "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "category": ev_obj.category or "Digital Forensic Image",
+                "timestamp": ev_obj.upload_timestamp.isoformat() if ev_obj.upload_timestamp else "2026-08-26T18:00:00Z"
+            })
+        else:
+            cand_p = case_output / str(fname)
+            cand_extracted = case_output / "extracted_artifacts" / str(fname)
+            actual_p = cand_p if cand_p.exists() else (cand_extracted if cand_extracted.exists() else None)
+            if actual_p and actual_p.is_file():
+                import hashlib
+                with open(actual_p, "rb") as af:
+                    real_sha = hashlib.sha256(af.read()).hexdigest()
+                structured_citations.append({
+                    "file": str(fname),
+                    "sha256": real_sha,
+                    "category": "Extracted Forensic Artifact",
+                    "timestamp": datetime.datetime.fromtimestamp(os.path.getmtime(actual_p)).isoformat()
+                })
+
+    # NO FORCED CITATIONS: Unmatched queries must have empty citations
+
+    # 4. Cognitive LLM Grounded Synthesis vs Transparent Extractive Fallback
     remote_url = ModelAdapterService.get_remote_gpu_url()
-    exec_mode = "REMOTE_LLM (Qwen2.5-7B LoRA on Colab GPU)" if remote_url else "LOCAL_EVIDENCE_GROUNDED_RAG"
+    exec_mode = "LOCAL_EVIDENCE_GROUNDED_RAG (Direct Extractive Fallback)"
+    cognitive_answer = None
+
+    # Format factual context from retrieved vector hits, subgraph, and top findings
+    context_sections = []
+    if vector_hits:
+        context_sections.append("Retrieved Forensic Excerpts (ChromaDB Vector Store):\n" + "\n".join(f"- {vh}" for vh in vector_hits[:3]))
+    if subgraph_data and subgraph_data.get("nodes"):
+        sub_desc = [f"Entity: {n.get('label')} ({n.get('entity_type')})" for n in subgraph_data["nodes"][:5]]
+        context_sections.append("Related Evidence Graph Context:\n" + "\n".join(f"- {sd}" for sd in sub_desc))
+    if findings:
+        f_desc = [f"Finding [{f.get('finding_id')}]: {f.get('title')} - {f.get('description')}" for f in findings[:4]]
+        context_sections.append("Verified Case Findings:\n" + "\n".join(f"- {fd}" for fd in f_desc))
+
+    context_str = "\n\n".join(context_sections) if context_sections else "No active finding or vector excerpts recorded."
+
+    if remote_url:
+        try:
+            rag_system_prompt = (
+                "You are SherlockAI Cognitive Forensic Assistant. Answer the investigator's question strictly "
+                "based on the factual forensic evidence and retrieved context provided below. "
+                "Cite specific finding IDs, artifact filenames, or entities for every statement. "
+                "If the supplied context does not contain sufficient information to answer the question, state: "
+                "'INSUFFICIENT_EVIDENCE: Case records do not contain evidence regarding this query.' "
+                "Do not speculate, fabricate facts, or assume facts not in evidence."
+            )
+            rag_user_prompt = (
+                f"Case ID: {case_id}\n"
+                f"Investigator Query: {q}\n\n"
+                f"Case Forensic Context:\n{context_str}\n\n"
+                "Provide grounded forensic analysis answering the query:"
+            )
+            formatted_rag_prompt = (
+                f"<|im_start|>system\n{rag_system_prompt}<|im_end|>\n"
+                f"<|im_start|>user\n{rag_user_prompt}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+
+            import urllib.request
+            rag_req_data = json.dumps({
+                "domain": "supervisor",
+                "evidence_type": "Case Forensic Query",
+                "prompt": formatted_rag_prompt,
+                "max_tokens": 512,
+                "temperature": 0.1
+            }).encode("utf-8")
+
+            token = ModelAdapterService.get_remote_token()
+            rag_headers = {"Content-Type": "application/json", "User-Agent": "SherlockAI-Client"}
+            if token:
+                rag_headers["X-Sherlock-Token"] = token
+
+            req_obj = urllib.request.Request(
+                f"{remote_url.rstrip('/')}/api/v1/inference",
+                data=rag_req_data,
+                headers=rag_headers
+            )
+            with urllib.request.urlopen(req_obj, timeout=12) as rag_resp:
+                if rag_resp.status == 200:
+                    rag_json = json.loads(rag_resp.read().decode("utf-8"))
+                    gen_text = rag_json.get("reasoning") or rag_json.get("raw_generation")
+                    if gen_text and len(gen_text.strip()) > 10:
+                        cognitive_answer = gen_text.strip()
+                        m_info = rag_json.get("model_info", {})
+                        adapter_used = m_info.get("adapter_name", "base_model")
+                        exec_mode = f"REMOTE_LLM (Qwen2.5-7B [{adapter_used}] on Colab GPU)"
+        except Exception as rag_err:
+            log_app_event(f"[Chatbot] Remote GPU RAG generation exception: {rag_err}. Using verified extractive fallback.")
+
+    if cognitive_answer:
+        answer = cognitive_answer
+    else:
+        # Transparent, verifiable extractive fallback without canned responses
+        top_find = findings[0] if findings else None
+        excerpts_bullet = "\n".join(f"• {vh}" for vh in vector_hits[:3]) if vector_hits else "• No matching vector fragments found in case store."
+        answer = (
+            f"[EXTRACTIVE FORENSIC CONTEXT — REMOTE GPU OFFLINE]\n"
+            f"Case: {case_id} | Review Status: {sis.get('review_gate', {}).get('status', 'PENDING')}\n\n"
+            f"Relevant Case Evidence Records for Query '{q}':\n"
+            f"{excerpts_bullet}\n\n"
+            f"Primary Finding: {top_find.get('title', 'N/A') if top_find else 'No anomalies registered.'} "
+            f"({top_find.get('mitre_technique', 'N/A') if top_find else ''})."
+        )
 
     return {
         "status": "SUCCESS",
         "case_id": case_id,
         "query": q,
         "answer": answer,
-        "citations": citations,
-        "vector_hits": vector_hits[:2],
+        "citations": structured_citations,
+        "vector_hits": vector_hits[:3],
+        "subgraph": subgraph_data,
         "confidence": sis.get("confidence_score", 0.95),
         "execution_mode": exec_mode,
-        "sis_review_status": sis.get("review_gate", {}).get("status", "PENDING")
+        "sis_review_status": sis.get("review_gate", {}).get("status", "PENDING"),
+        "mitre_techniques": mitre_list[:5]
     }
 

@@ -15,8 +15,24 @@ import json
 import pytest
 from pathlib import Path
 
+from app.services.agent_barrier_service import AgentBarrierService
 from app.services.knowledge_service import KnowledgeService
 from app.services.graph_service import EvidenceGraphService
+
+
+def _setup_barrier_for_case(case_id: str):
+    """Create valid findings for all five domains so the barrier is satisfied."""
+    findings = []
+    for domain in ["network", "memory", "disk", "logs", "registry"]:
+        findings.append({
+            "case_id": case_id,
+            "domain": domain,
+            "finding_id": f"FIND-{domain.upper()}-001",
+            "classification": "BENIGN",
+            "confidence": 0.80,
+            "is_examination_status": False,
+        })
+    AgentBarrierService.evaluate_five_agent_barrier(case_id, findings)
 
 
 @pytest.fixture(scope="module")
@@ -76,6 +92,7 @@ def test_evidence_graph_construction(sample_case_id):
     """
     Verifies Evidence Graph construction with explicit entity types and edge relationship natures.
     """
+    _setup_barrier_for_case(sample_case_id)
     G = EvidenceGraphService.build_case_evidence_graph(sample_case_id)
     assert G.number_of_nodes() > 20
     assert G.number_of_edges() > 20
@@ -117,6 +134,7 @@ def test_technique_provenance_trace(sample_case_id):
     Demonstrates a complete evidentiary trace:
     ATT&CK Technique (T1055) -> Finding -> Process Observation -> Artifact -> Raw Evidence.
     """
+    _setup_barrier_for_case(sample_case_id)
     G = EvidenceGraphService.build_case_evidence_graph(sample_case_id)
     traces = EvidenceGraphService.trace_technique_provenance(G, "T1055")
     assert len(traces) > 0, "No provenance trace found for T1055"

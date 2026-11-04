@@ -9,6 +9,7 @@ import json
 import pytest
 from pathlib import Path
 
+from app.services.agent_barrier_service import AgentBarrierService
 from app.services.neo4j_service import Neo4jService
 from app.services.synthesizer_service import (
     ForensicSynthesizerService,
@@ -16,6 +17,21 @@ from app.services.synthesizer_service import (
 )
 from app.services.model_adapter_service import ModelAdapterService
 from app.services.graph_service import EvidenceGraphService
+
+
+def _setup_barrier_for_case(case_id: str):
+    """Create valid findings for all five domains so the barrier is satisfied."""
+    findings = []
+    for domain in ["network", "memory", "disk", "logs", "registry"]:
+        findings.append({
+            "case_id": case_id,
+            "domain": domain,
+            "finding_id": f"FIND-{domain.upper()}-001",
+            "classification": "BENIGN",
+            "confidence": 0.80,
+            "is_examination_status": False,
+        })
+    AgentBarrierService.evaluate_five_agent_barrier(case_id, findings)
 
 
 def test_neo4j_offline_resilience_and_cypher_export(tmp_path):
@@ -103,6 +119,7 @@ def test_4class_epistemic_classification_and_uncertainty():
     Also verifies uncertainty score = 1.0 - confidence.
     """
     case_id = "DISK_2"
+    _setup_barrier_for_case(case_id)
     synthesized = ForensicSynthesizerService.synthesize_case(case_id)
     correlations = synthesized.get("correlations", [])
 
@@ -175,6 +192,7 @@ def test_pre_sis_generation_and_review_gate(tmp_path):
     and review_pre_sis properly promotes to APPROVED_LOCKED.
     """
     case_id = "Bharath_TES1"
+    _setup_barrier_for_case(case_id)
     synthesized = ForensicSynthesizerService.synthesize_case(case_id)
 
     pre_sis = synthesized.get("pre_sis_state")

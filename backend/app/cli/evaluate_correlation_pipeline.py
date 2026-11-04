@@ -24,7 +24,7 @@ from app.services.synthesizer_service import ForensicSynthesizerService
 # Case ID mapping between dataset investigation IDs and physical case directories
 CASE_MAPPING = {
     "PILOT_CASE_JW01": "Standalone Artifact Test",
-    "PILOT_CASE_CR02": "Bharath_TES1",
+    "PILOT_CASE_CR02": "Memory_Incident_01",
     "PILOT_CASE_SRV03": "DISK_2"
 }
 

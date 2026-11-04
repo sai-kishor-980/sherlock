@@ -104,19 +104,26 @@ class PluginManager:
                 name = item.get("name", Path(path).name)
                 explicit_id = item.get("evidence_id") or item.get("id")
 
-            raw_type = explicit_type or EvidenceDetector.detect(path)
-            evidence_type = PluginRegistry.canonicalize(raw_type) or str(raw_type).lower()
+            # 1. Forensic Signature & Extension Detection takes precedence
+            detected_type = EvidenceDetector.detect(path)
+            canonical_detected = PluginRegistry.canonicalize(detected_type) or detected_type
+            if detected_type != "unknown" and PluginRegistry.enabled(canonical_detected):
+                evidence_type = canonical_detected
+            elif explicit_type:
+                # 2. Fall back to explicit investigator category if extension was ambiguous
+                canonical_explicit = PluginRegistry.canonicalize(explicit_type) or str(explicit_type).lower()
+                if PluginRegistry.enabled(canonical_explicit):
+                    evidence_type = canonical_explicit
+                else:
+                    evidence_type = canonical_detected
+            else:
+                evidence_type = canonical_detected
 
             if not PluginRegistry.enabled(evidence_type):
-                # Try fallback to detector if explicit type was not a known plugin
-                detected_fallback = EvidenceDetector.detect(path)
-                if detected_fallback and PluginRegistry.enabled(detected_fallback):
-                    evidence_type = PluginRegistry.canonicalize(detected_fallback)
-                else:
-                    print(
-                        f"[SKIPPED] Plugin disabled: {evidence_type} (raw: {raw_type}) for {path}"
-                    )
-                    continue
+                print(
+                    f"[SKIPPED] Plugin disabled: {evidence_type} (explicit: {explicit_type}, detected: {detected_type}) for {path}"
+                )
+                continue
 
             evidence = Evidence(
                 evidence_id=explicit_id or f"EVD-{index:03d}",

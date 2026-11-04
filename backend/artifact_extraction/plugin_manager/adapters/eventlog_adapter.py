@@ -48,6 +48,15 @@ class EventLogAdapter:
 
         analyzer.analyze()
 
+        # Mirror outputs to standard domain location for supervisor & domain agent discovery
+        logs_target = self.case_output / "extracted_artifacts" / "logs"
+        logs_target.mkdir(parents=True, exist_ok=True)
+        for json_file in output_dir.glob("*.json"):
+            try:
+                shutil.copy2(json_file, logs_target / json_file.name)
+            except Exception:
+                pass
+
         return {
             "evidence_id": evidence.evidence_id,
             "name": evidence.name,

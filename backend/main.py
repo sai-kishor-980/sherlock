@@ -156,14 +156,18 @@ def create_app() -> FastAPI:
             return FileResponse(jpg_logo, media_type="image/jpeg")
         return JSONResponse(status_code=404, content={"detail": "Logo asset not found"})
 
-    # Robust resolution of frontend directory (with PyInstaller frozen bundle support)
+    # Robust resolution of frontend directory (with React Vite dist & PyInstaller support)
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         frontend_dir = os.path.abspath(os.path.join(sys._MEIPASS, "frontend"))
     else:
         base_dir = os.path.abspath(os.path.dirname(__file__))
-        frontend_dir = os.path.abspath(os.path.join(base_dir, "..", "frontend"))
-        if not os.path.exists(frontend_dir):
-            frontend_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "..", "frontend"))
+        dist_candidate = os.path.abspath(os.path.join(base_dir, "..", "frontend", "dist"))
+        if os.path.exists(dist_candidate) and os.path.exists(os.path.join(dist_candidate, "index.html")):
+            frontend_dir = dist_candidate
+        else:
+            frontend_dir = os.path.abspath(os.path.join(base_dir, "..", "frontend"))
+            if not os.path.exists(frontend_dir):
+                frontend_dir = os.path.abspath(os.path.join(settings.BASE_DIR, "..", "frontend"))
 
     # Bulletproof Frontend Web UI Routes for /ui, /ui/, /ui/index.html & assets
     @app.get("/ui", include_in_schema=False)
@@ -184,12 +188,16 @@ def create_app() -> FastAPI:
             return FileResponse(index_file)
         return JSONResponse(status_code=404, content={"detail": f"{file_path} not found"})
 
-    # Mount static assets for root and /ui paths (images, css, js)
+    # Mount static assets for root and /ui paths (assets, images, css, js)
     if os.path.exists(frontend_dir):
+        assets_dir = os.path.join(frontend_dir, "assets")
         images_dir = os.path.join(frontend_dir, "images")
         css_dir = os.path.join(frontend_dir, "css")
         js_dir = os.path.join(frontend_dir, "js")
         
+        if os.path.exists(assets_dir):
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+            app.mount("/ui/assets", StaticFiles(directory=assets_dir), name="ui_assets")
         if os.path.exists(images_dir):
             app.mount("/images", StaticFiles(directory=images_dir), name="images")
             app.mount("/ui/images", StaticFiles(directory=images_dir), name="ui_images")
@@ -202,6 +210,14 @@ def create_app() -> FastAPI:
 
         app.mount("/static", StaticFiles(directory=frontend_dir, html=True), name="static")
 
+
+    @app.get("/cases/{full_path:path}", include_in_schema=False)
+    @app.get("/cases", include_in_schema=False)
+    def serve_spa_cases(full_path: str = ""):
+        index_file = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return JSONResponse(status_code=404, content={"detail": "index.html not found"})
 
     @app.get("/", tags=["Health Check"])
     def root():

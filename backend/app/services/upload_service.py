@@ -49,7 +49,7 @@ class UploadService:
         file_hash = calculate_sha256(content)
         hmac_sig = generate_hmac(content)
 
-        # 5. Create Evidence Record
+        # 5. Create Evidence Record with VALIDATED integrity status
         evidence_record = Evidence(
             case_id=case_id,
             original_filename=original_filename,
@@ -59,7 +59,7 @@ class UploadService:
             extension=extension,
             file_size=file_size,
             storage_path=storage_path,
-            status="Uploaded",
+            status="VALIDATED",
             file_hash=file_hash,
             hmac_signature=hmac_sig
         )
@@ -69,12 +69,12 @@ class UploadService:
         CustodyRepository.add_log(
             db,
             evidence_id=saved_record.evidence_id,
-            action="Uploaded",
+            action="Preserved & Cryptographically Validated",
             performed_by=investigator,
-            remarks=description if (description and description.strip()) else "Uploaded"
+            remarks=description if (description and description.strip()) else f"SHA-256: {file_hash}"
         )
 
         # 7. Log Event
-        log_upload_event(case_id=case_id, filename=original_filename, status="Uploaded")
+        log_upload_event(case_id=case_id, filename=original_filename, status="VALIDATED")
 
         return saved_record

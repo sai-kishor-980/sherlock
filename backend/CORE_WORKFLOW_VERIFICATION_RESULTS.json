@@ -2,24 +2,24 @@
   "phases": {
     "B1_case_creation": {
       "status": "VERIFIED",
-      "case_id": "CASE_E2E_8D17D7",
+      "case_id": "CASE_E2E_AFBD2A",
       "investigator": "lead_investigator_e2e",
-      "vault_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7"
+      "vault_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_AFBD2A"
     },
     "B2_evidence_upload": {
       "status": "VERIFIED",
       "items": [
         {
-          "evidence_id": "bc9f5194-02b2-4c1c-92f1-8c753ebaa25c",
+          "evidence_id": "73ffcec4-3a0c-478f-b8f7-059bce54e1d2",
           "filename": "SAM",
           "size": 262144,
-          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7\\Registry\\SAM"
+          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_AFBD2A\\Registry\\SAM"
         },
         {
-          "evidence_id": "85a5f73a-9082-4c1f-ba80-778780c0221d",
+          "evidence_id": "36b33a9e-c086-423e-a7f5-7d8acdf7e2f4",
           "filename": "VMWARETRAY.EXE-029F476F.pf",
           "size": 14306,
-          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_8D17D7\\Disk\\VMWARETRAY.EXE-029F476F.pf"
+          "storage_path": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\evidence_vault\\CASE_E2E_AFBD2A\\Disk\\VMWARETRAY.EXE-029F476F.pf"
         }
       ]
     },
@@ -38,7 +38,7 @@
         "prefetch_analysis.json",
         "prefetch_summary.json"
       ],
-      "case_output_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7"
+      "case_output_dir": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_AFBD2A"
     },
     "B5_contract_validation": {
       "status": "VERIFIED",
@@ -77,59 +77,14 @@
     },
     "B6_supervisor_routing": {
       "status": "VERIFIED",
-      "total_artifacts": 17,
+      "total_artifacts": 3,
       "active_agents": {
-        "network": {
-          "agent": "Network Agent",
-          "lead": "Pranay",
-          "total_expected": 9,
-          "extracted_count": 0,
-          "status": "READY",
-          "files": []
-        },
-        "memory": {
-          "agent": "Memory Agent",
-          "lead": "Bharath",
-          "total_expected": 11,
-          "extracted_count": 0,
-          "status": "READY",
-          "files": []
-        },
         "disk": {
-          "agent": "Disk Agent",
-          "lead": "Aswith",
-          "total_expected": 11,
-          "extracted_count": 11,
+          "agent": "Disk & Filesystem Agent",
+          "role": "Filesystem & Disk Artifact Specialist",
+          "extracted_count": 2,
           "status": "COMPLETED",
           "files": [
-            {
-              "filename": "mft_analysis.json",
-              "rel_path": "extracted_artifacts/disk/mft_analysis.json",
-              "file_size": 438,
-              "size_formatted": "438 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "mft_summary.json",
-              "rel_path": "extracted_artifacts/disk/mft_summary.json",
-              "file_size": 436,
-              "size_formatted": "436 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "lnk_analysis.json",
-              "rel_path": "extracted_artifacts/disk/lnk_analysis.json",
-              "file_size": 438,
-              "size_formatted": "438 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "lnk_summary.json",
-              "rel_path": "extracted_artifacts/disk/lnk_summary.json",
-              "file_size": 436,
-              "size_formatted": "436 B",
-              "status": "EXTRACTED"
-            },
             {
               "filename": "prefetch_analysis.json",
               "rel_path": "extracted_artifacts/disk/prefetch_analysis.json",
@@ -143,99 +98,20 @@
               "file_size": 831,
               "size_formatted": "831 B",
               "status": "EXTRACTED"
-            },
-            {
-              "filename": "recyclebin_analysis.json",
-              "rel_path": "extracted_artifacts/disk/recyclebin_analysis.json",
-              "file_size": 452,
-              "size_formatted": "452 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "recyclebin_summary.json",
-              "rel_path": "extracted_artifacts/disk/recyclebin_summary.json",
-              "file_size": 450,
-              "size_formatted": "450 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "jumplist_automatic.json",
-              "rel_path": "extracted_artifacts/disk/jumplist_automatic.json",
-              "file_size": 450,
-              "size_formatted": "450 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "jumplist_custom.json",
-              "rel_path": "extracted_artifacts/disk/jumplist_custom.json",
-              "file_size": 444,
-              "size_formatted": "444 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "jumplist_summary.json",
-              "rel_path": "extracted_artifacts/disk/jumplist_summary.json",
-              "file_size": 446,
-              "size_formatted": "446 B",
-              "status": "EXTRACTED"
             }
           ]
         },
-        "logs": {
-          "agent": "Log Agent",
-          "lead": "Sanhith",
-          "total_expected": 6,
-          "extracted_count": 0,
-          "status": "READY",
-          "files": []
-        },
         "registry": {
-          "agent": "Registry Agent",
-          "lead": "Kishor",
-          "total_expected": 6,
-          "extracted_count": 6,
+          "agent": "Windows Registry Agent",
+          "role": "Registry Hive & Configuration Specialist",
+          "extracted_count": 1,
           "status": "COMPLETED",
           "files": [
-            {
-              "filename": "installed_software.json",
-              "rel_path": "extracted_artifacts/registry/installed_software.json",
-              "file_size": 431,
-              "size_formatted": "431 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "usb_devices.json",
-              "rel_path": "extracted_artifacts/registry/usb_devices.json",
-              "file_size": 417,
-              "size_formatted": "417 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "run_keys.json",
-              "rel_path": "extracted_artifacts/registry/run_keys.json",
-              "file_size": 411,
-              "size_formatted": "411 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "recent_files.json",
-              "rel_path": "extracted_artifacts/registry/recent_files.json",
-              "file_size": 419,
-              "size_formatted": "419 B",
-              "status": "EXTRACTED"
-            },
             {
               "filename": "registry_summary.json",
               "rel_path": "extracted_artifacts/registry/registry_summary.json",
               "file_size": 803,
               "size_formatted": "803 B",
-              "status": "EXTRACTED"
-            },
-            {
-              "filename": "registry_errors.json",
-              "rel_path": "extracted_artifacts/registry/registry_errors.json",
-              "file_size": 425,
-              "size_formatted": "425 B",
               "status": "EXTRACTED"
             }
           ]
@@ -245,34 +121,112 @@
     "B7_domain_agents": {
       "status": "VERIFIED",
       "registry_agent": {
-        "domain": "registry",
+        "finding_id": "FINDING-REGISTRY-E50CF9",
         "agent": "Registry Agent",
+        "domain": "registry",
         "team_member": "Kishor",
+        "artifact_type": "Registry Hive",
         "evidence_type": "Registry Hive",
+        "observation": "Analyzed Registry Hive artifact with Registry Agent.",
+        "entities": [
+          {
+            "domain": "registry",
+            "type": "Registry Hive"
+          }
+        ],
+        "assessment": "BENIGN",
         "classification": "BENIGN",
+        "risk": "LOW",
         "risk_level": "LOW",
         "reasoning": "The Registry Agent (Kishor) examined the extracted Registry Hive artifacts. No overt persistence or malicious execution patterns identified in this artifact.",
+        "supporting_evidence": [
+          {
+            "evidence_type": "Registry Hive",
+            "indicators": [
+              "Baseline operational activity observed."
+            ]
+          }
+        ],
         "key_evidence": [
           "Baseline operational activity observed."
+        ],
+        "timeline": {
+          "timestamp_utc": null,
+          "timestamp_type": "UNAVAILABLE",
+          "event_description": "Registry Hive execution record analyzed"
+        },
+        "confidence": 0.64,
+        "recommended_next_evidence": [
+          "Correlate with process execution logs",
+          "Verify corresponding filesystem or network indicators"
         ],
         "adapter_model": "registry_adapter",
         "contract_validated": true,
-        "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+        "analysis_mode": "Rule-based",
+        "inference_provider": "Rule-based (Local Forensic Heuristic Engine)",
+        "observation_accounting": {
+          "total_observations": 1,
+          "analyzed_observations": 1,
+          "skipped_observations": 0,
+          "failed_observations": 0,
+          "batch_count": 1,
+          "accounting_status": "COMPLETE",
+          "source_artifact": "Registry Hive"
+        }
       },
       "disk_agent": {
-        "domain": "disk",
+        "finding_id": "FINDING-DISK-26C18B",
         "agent": "Disk Agent",
+        "domain": "disk",
         "team_member": "Aswith",
+        "artifact_type": "Prefetch Execution Record",
         "evidence_type": "Prefetch Execution Record",
+        "observation": "Analyzed Prefetch Execution Record artifact with Disk Agent.",
+        "entities": [
+          {
+            "domain": "disk",
+            "type": "Prefetch Execution Record"
+          }
+        ],
+        "assessment": "BENIGN",
         "classification": "BENIGN",
+        "risk": "LOW",
         "risk_level": "LOW",
         "reasoning": "The Disk Agent (Aswith) examined the extracted Prefetch Execution Record artifacts. No overt persistence or malicious execution patterns identified in this artifact.",
+        "supporting_evidence": [
+          {
+            "evidence_type": "Prefetch Execution Record",
+            "indicators": [
+              "Baseline operational activity observed."
+            ]
+          }
+        ],
         "key_evidence": [
           "Baseline operational activity observed."
         ],
+        "timeline": {
+          "timestamp_utc": null,
+          "timestamp_type": "UNAVAILABLE",
+          "event_description": "Prefetch Execution Record execution record analyzed"
+        },
+        "confidence": 0.64,
+        "recommended_next_evidence": [
+          "Correlate with process execution logs",
+          "Verify corresponding filesystem or network indicators"
+        ],
         "adapter_model": "disk_adapter",
         "contract_validated": true,
-        "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+        "analysis_mode": "Rule-based",
+        "inference_provider": "Rule-based (Local Forensic Heuristic Engine)",
+        "observation_accounting": {
+          "total_observations": 1,
+          "analyzed_observations": 1,
+          "skipped_observations": 0,
+          "failed_observations": 0,
+          "batch_count": 1,
+          "accounting_status": "COMPLETE",
+          "source_artifact": "Prefetch Execution Record"
+        }
       }
     },
     "B8_synthesis_and_persistence": {
@@ -280,8 +234,8 @@
       "findings_count": 1,
       "timeline_count": 1,
       "correlations_count": 0,
-      "sis_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7\\sis_state.json",
-      "report_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_8D17D7\\synthesized_report.json"
+      "sis_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_AFBD2A\\sis_state.json",
+      "report_file": "C:\\Users\\saiki\\Desktop\\BTECH\\ForensicAI\\project\\sherf\\backend\\output\\cases\\CASE_E2E_AFBD2A\\synthesized_report.json"
     },
     "C_routing_correctness": {
       "status": "VERIFIED",
@@ -305,7 +259,7 @@
           "source_evidence": "VMWARETRAY.EXE-029F476F.pf",
           "extractor": "PrefetchAdapter (PrefetchAnalyzer)",
           "contract": "extracted_artifacts/disk/prefetch_analysis.json",
-          "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+          "inference_provider": "Rule-based (Local Forensic Heuristic Engine)"
         },
         "logs": {
           "agent": "Log Agent",
@@ -320,7 +274,7 @@
           "source_evidence": "SAM",
           "extractor": "RegistryAdapter (RegistryAnalyzer)",
           "contract": "extracted_artifacts/registry/registry_summary.json",
-          "inference_provider": "Local Forensic Cognitive Engine (Air-Gapped)"
+          "inference_provider": "Rule-based (Local Forensic Heuristic Engine)"
         }
       }
     }
@@ -333,6 +287,6 @@
     "D5_restart_retrieval": "PASSED"
   },
   "timings": {
-    "total_seconds": 8.93
+    "total_seconds": 9.14
   }
 }

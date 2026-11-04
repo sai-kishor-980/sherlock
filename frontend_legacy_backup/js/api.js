@@ -1,5 +1,15 @@
 /* HMACFR API Client Service with Authentication & Authorization Headers */
-const API_BASE_URL = "/api/v1";
+const API_BASE_URL = (function() {
+  if (typeof window !== "undefined") {
+    if (window.location.protocol === "file:") {
+      return "http://127.0.0.1:8000/api/v1";
+    }
+    if (window.location.port && window.location.port !== "8000" && window.location.port !== "80" && window.location.port !== "443") {
+      return "http://127.0.0.1:8000/api/v1";
+    }
+  }
+  return "/api/v1";
+})();
 
 const HMACFR_API = {
   // Auth Helpers
@@ -896,5 +906,20 @@ const HMACFR_API = {
 };
 
 window.HMACFR_API = HMACFR_API;
+
+// Universal Fetch 401 Interceptor:
+// If the backend returns 401 (e.g. invalid credentials, expired session, revoked token),
+// cleanly log out and redirect to the sign-in modal rather than failing with confusing internal error dialogs.
+if (typeof window !== "undefined" && window.fetch) {
+  const _originalFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const response = await _originalFetch.apply(this, args);
+    const requestUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+    if (response.status === 401 && !requestUrl.includes("/auth/login")) {
+      HMACFR_API.handleUnauthorized("Authentication session expired or invalid. Please sign in again.");
+    }
+    return response;
+  };
+}
 
 

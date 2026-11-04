@@ -17,6 +17,7 @@ Every output item retains provenance: case_id, artifact_id, source, timestamp, c
 import os
 import json
 import uuid
+import re
 import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -64,6 +65,94 @@ class ForensicSynthesizerService:
 
         log_app_event(f"[Synthesizer] Synthesizing forensic data for case '{case_id}' from {case_output}")
 
+        # Barrier enforcement: SIS generation requires all five domains to have valid
+        # execution outcomes for the CURRENT execution. Stale state from a previous
+        # run must never authorize a new synthesis.
+        from app.services.agent_barrier_service import AgentBarrierService
+        case_state = AgentBarrierService.get_case_state(case_id)
+        execution_id = case_state.get("execution_id")
+        if not execution_id or not AgentBarrierService.validate_barrier_for_execution(case_id, execution_id):
+            log_app_event(f"[Synthesizer] Case '{case_id}' synthesis blocked: five-agent barrier not satisfied for current execution '{execution_id}'.")
+            blocked_response = {
+                "status": "BLOCKED_BARRIER_NOT_SATISFIED",
+                "case_id": case_id,
+                "execution_id": execution_id,
+                "message": f"New SIS generation blocked: five-agent barrier not satisfied for current execution '{execution_id}'. All five domain agents (network, memory, disk, logs, registry) must complete validated execution before SIS synthesis. Stale results from previous executions do not satisfy the barrier.",
+                "timeline": [],
+                "findings": [],
+                "correlations": [],
+                "reconstruction": {"stages": []},
+                "artifact_inventory": {"total_artifacts": 0, "domains": {}},
+                "court_report": None,
+                "evidence_sufficiency": {"status": "BARRIER_NOT_SATISFIED", "sufficiency_score": 0.0, "gaps_detected": ["Five-agent barrier not satisfied for current execution - domain agent examination incomplete"]},
+                "sis_state": {
+                    "case_id": case_id,
+                    "case_name": case_name or case_id,
+                    "execution_id": execution_id,
+                    "investigator": investigator or "Investigator 01",
+                    "investigation_status": "BLOCKED_BARRIER_NOT_SATISFIED",
+                    "confidence_score": 0.0,
+                    "overall_severity": "NONE",
+                    "attack_timeline": [],
+                    "findings": [],
+                    "correlations": [],
+                    "causal_hypotheses": [],
+                    "mitre_techniques": [],
+                    "review_gate": {"status": "BLOCKED_BARRIER_NOT_SATISFIED", "notes": "Five-agent barrier not satisfied for current execution - SIS generation blocked."}
+                }
+            }
+            cls._cache_synthesized_to_disk(case_id, blocked_response)
+            return blocked_response
+
+        has_extractions = case_output.exists() and any(case_output.iterdir())
+        if not has_extractions and not evidence_records:
+            try:
+                from app.db.connection import SessionLocal
+                from app.db.models.evidence import Evidence
+                with SessionLocal() as db_sess:
+                    db_evs = db_sess.query(Evidence).filter(Evidence.case_id == case_id).all()
+                    if db_evs:
+                        evidence_records = [
+                            {
+                                "evidence_id": ev.evidence_id,
+                                "original_filename": ev.original_filename,
+                                "file_hash": ev.file_hash,
+                                "status": ev.status
+                            }
+                            for ev in db_evs
+                        ]
+            except Exception as e:
+                log_app_event(f"[Synthesizer] Note on DB evidence query: {e}")
+
+        if not has_extractions and not evidence_records:
+            log_app_event(f"[Synthesizer] Case '{case_id}' has no ingested evidence or extracted artifacts. Aborting synthesis.")
+            return {
+                "status": "BLOCKED_NO_EVIDENCE",
+                "case_id": case_id,
+                "message": f"Case '{case_id}' contains no ingested evidence artifacts to synthesize.",
+                "timeline": [],
+                "findings": [],
+                "correlations": [],
+                "reconstruction": {"stages": []},
+                "artifact_inventory": {"total_artifacts": 0, "domains": {}},
+                "court_report": None,
+                "evidence_sufficiency": {"status": "NO_EVIDENCE", "sufficiency_score": 0.0, "gaps_detected": ["No evidence artifacts ingested."]},
+                "sis_state": {
+                    "case_id": case_id,
+                    "case_name": case_name or case_id,
+                    "investigator": investigator or "Investigator 01",
+                    "investigation_status": "UNINITIALIZED",
+                    "confidence_score": 0.0,
+                    "overall_severity": "NONE",
+                    "attack_timeline": [],
+                    "findings": [],
+                    "correlations": [],
+                    "causal_hypotheses": [],
+                    "mitre_techniques": [],
+                    "review_gate": {"status": "BLOCKED_NO_EVIDENCE", "notes": "No evidence uploaded"}
+                }
+            }
+
         # 1. Ingest raw extractions
         memory_data = cls._ingest_memory(case_output)
         disk_data = cls._ingest_disk(case_output)
@@ -81,8 +170,101 @@ class ForensicSynthesizerService:
         # 5. Build Cross-Source Correlations
         correlations = cls._build_correlations(case_id, findings, memory_data, disk_data, pcap_data)
 
-        # 6. Attack Reconstruction
+        # 5.5. Cognitive Cross-Domain Correlation via Supervisor LLM
+        supervisor_result = None
+        try:
+            from app.services.model_adapter_service import ModelAdapterService
+            if findings and correlations:
+                supervisor_result = ModelAdapterService.analyze_supervisor_correlation(
+                    case_id=case_id,
+                    findings=findings,
+                    candidate_edges=correlations
+                )
+        except Exception as sup_err:
+            log_app_event(f"[Synthesizer] Supervisor correlation call exception: {sup_err}")
+
+        # Block new SIS/court report generation when Supervisor LLM inference is unavailable.
+        # Deterministic findings and correlations are preserved, but SIS state and court report
+        # are not generated when Supervisor reasoning is unavailable.
+        supervisor_blocked = bool(
+            supervisor_result
+            and supervisor_result.get("error") == "GPU_UNAVAILABLE"
+        )
+
+        if supervisor_result and supervisor_result.get("correlations"):
+            sup_edges = supervisor_result.get("correlations", [])
+            for se in sup_edges:
+                if se.get("source_finding_id") and se.get("target_finding_id"):
+                    cid = f"CORR-SUP-{len(correlations) + 1:04d}"
+                    correlations.append({
+                        "case_id": case_id,
+                        "correlation_id": cid,
+                        "title": f"Cognitive Supervisor Link: {se.get('relationship_type', 'CORRELATES_WITH')}",
+                        "relationship_type": se.get("relationship_type", "cross_domain_link"),
+                        "correlation_nature": "SUPERVISOR_NEURAL_HYPOTHESIS",
+                        "epistemic_classification": se.get("epistemic_class", "CORRELATIONAL_ASSOCIATION"),
+                        "assessment": "suspicious",
+                        "confidence": se.get("confidence", 0.85),
+                        "confidence_score": se.get("confidence", 0.85),
+                        "uncertainty_score": se.get("uncertainty_score", 0.15),
+                        "confidence_justification": se.get("reasoning", "Cross-domain correlation evaluated by cognitive Supervisor LLM."),
+                        "temporal_status": "CHRONOLOGICALLY_ORDERED",
+                        "temporal_delta_seconds": 0.0,
+                        "reasoning": se.get("reasoning"),
+                        "supporting_evidence": [se.get("source_finding_id"), se.get("target_finding_id")],
+                        "inference_provider": supervisor_result.get("inference_provider", "AI-assisted (Remote GPU Accelerated)")
+                    })
+
+        # 6. Block new SIS/court report generation when Supervisor LLM inference is unavailable.
+        # Deterministic findings, correlations, and timeline are preserved for caller inspection,
+        # but SIS state, court report, and sufficiency evaluation are not generated.
+        if supervisor_blocked:
+            gpu_blocked_response = {
+                "status": "BLOCKED_GPU_UNAVAILABLE",
+                "case_id": case_id,
+                "message": f"New SIS generation blocked: remote GPU inference bridge is unavailable for Supervisor LLM reasoning.",
+                "artifact_inventory": artifacts_explorer["summary"],
+                "artifacts": artifacts_explorer["categories"],
+                "timeline": timeline,
+                "findings": findings,
+                "correlations": correlations,
+                "reconstruction": {"stages": [], "note": "Blocked: Supervisor LLM inference unavailable"},
+                "court_report": None,
+                "evidence_sufficiency": {"status": "GPU_UNAVAILABLE", "sufficiency_score": 0.0, "gaps_detected": ["Supervisor LLM inference unavailable"]},
+                "sis_state": {
+                    "case_id": case_id,
+                    "case_name": case_name or case_id,
+                    "investigator": investigator or "Investigator 01",
+                    "investigation_status": "BLOCKED_GPU_UNAVAILABLE",
+                    "confidence_score": 0.0,
+                    "overall_severity": "NONE",
+                    "attack_timeline": timeline,
+                    "findings": findings,
+                    "correlations": correlations,
+                    "causal_hypotheses": [],
+                    "mitre_techniques": [],
+                    "review_gate": {"status": "BLOCKED_GPU_UNAVAILABLE", "notes": "Supervisor LLM inference unavailable - SIS generation blocked."}
+                }
+            }
+            cls._cache_synthesized_to_disk(case_id, gpu_blocked_response)
+            # Also persist sis_state.json so retrieval endpoints can read the
+            # blocked SIS without triggering new synthesis. The review gate is
+            # BLOCKED_GPU_UNAVAILABLE (not APPROVED), so report/PDF endpoints
+            # remain locked.
+            sis_file = case_output / "sis_state.json"
+            if not sis_file.exists():
+                try:
+                    with open(sis_file, "w", encoding="utf-8") as f:
+                        json.dump(gpu_blocked_response["sis_state"], f, indent=2, default=str)
+                except Exception:
+                    pass
+            return gpu_blocked_response
+
+        # 7. Attack Reconstruction
         reconstruction = cls._build_reconstruction(case_id, timeline, findings, correlations)
+        if supervisor_result and supervisor_result.get("incident_narrative"):
+            reconstruction["cognitive_incident_narrative"] = supervisor_result.get("incident_narrative")
+            reconstruction["narrative"] = f"{supervisor_result.get('incident_narrative')} [Grounded by {len(findings)} findings and {len(correlations)} correlation links]."
 
         # 7. Court-Ready Forensic Report
         court_report = cls._build_court_report(
@@ -167,26 +349,87 @@ class ForensicSynthesizerService:
                 json.dump(synthesized_data, f, indent=2, default=str)
             
             sis_file = case_output / "sis_state.json"
-            # If an existing approved review gate exists, preserve review status
+            # Never associate an old approval with newly generated SIS content.
+            # If a previously APPROVED or REJECTED SIS exists, preserve it untouched
+            # and write the new SIS as a pending version requiring fresh investigator review.
+            existing_approved = False
             if sis_file.exists():
                 try:
                     with open(sis_file, "r", encoding="utf-8") as sf:
                         old_sis = json.load(sf)
                         if old_sis.get("review_gate", {}).get("status") in ["APPROVED", "REJECTED"]:
-                            sis_state["review_gate"] = old_sis["review_gate"]
-                            sis_state["investigation_status"] = old_sis.get("investigation_status", sis_state["investigation_status"])
-                            sis_state["state_version"] = old_sis.get("state_version", 1) + 1
+                            existing_approved = True
                 except Exception:
                     pass
 
-            with open(sis_file, "w", encoding="utf-8") as f:
-                json.dump(sis_state, f, indent=2, default=str)
+            if existing_approved:
+                # Preserve the approved SIS file; write new SIS to a versioned pending file.
+                old_version = old_sis.get("state_version", old_sis.get("version", 1))
+                sis_state["state_version"] = old_version + 1
+                sis_state["version"] = old_version + 1
+                sis_state["review_gate"] = {
+                    "status": "PENDING",
+                    "reviewed_by": None,
+                    "reviewed_at": None,
+                    "notes": "Newly generated SIS content requires fresh investigator review and approval. Previous approval does not carry over."
+                }
+                sis_state["investigation_status"] = "REVIEW_PENDING"
+                sis_state["status"] = "REVIEW_PENDING"
+                # Write new pending SIS to a versioned file, preserving the approved original.
+                versioned_sis_file = case_output / f"sis_state_v{old_version + 1}_pending.json"
+                with open(versioned_sis_file, "w", encoding="utf-8") as f:
+                    json.dump(sis_state, f, indent=2, default=str)
+                log_app_event(f"[Synthesizer] New SIS written as pending versioned file (previous APPROVED/REJECTED SIS preserved): {versioned_sis_file.name}")
+            else:
+                with open(sis_file, "w", encoding="utf-8") as f:
+                    json.dump(sis_state, f, indent=2, default=str)
 
             log_app_event(f"[Synthesizer] Synthesized report and SIS state cached for case '{case_id}'")
         except Exception as e:
             log_error_event(f"[Synthesizer] Failed to write synthesized files: {e}")
 
         return synthesized_data
+
+    @classmethod
+    def _cache_synthesized_to_disk(cls, case_id: str, data: Dict[str, Any]) -> None:
+        """
+        Write a synthesized response (including blocked/incomplete results) to disk
+        so retrieval endpoints can read it without triggering new synthesis.
+        Does NOT touch sis_state.json (SIS write-back is handled separately).
+        Preserves any previously approved synthesized_report.json: a GPU-blocked
+        or incomplete run does not overwrite an existing approved court report.
+        """
+        try:
+            case_output = cls.get_case_output_dir(case_id)
+            case_output.mkdir(parents=True, exist_ok=True)
+            report_file = case_output / "synthesized_report.json"
+
+            # If an approved report already exists, do not overwrite it with a
+            # blocked/incomplete response. Save the blocked response separately.
+            if report_file.exists():
+                try:
+                    with open(report_file, "r", encoding="utf-8") as f:
+                        existing_report = json.load(f)
+                    existing_court = existing_report.get("court_report")
+                    existing_sis = existing_report.get("sis_state", {})
+                    existing_gate = existing_sis.get("review_gate", {})
+                    if existing_court is not None and existing_gate.get("status") == "APPROVED":
+                        # Preserve the approved report; write blocked response to a separate file.
+                        blocked_file = case_output / f"synthesized_report_blocked_{data.get('status', 'blocked').lower()}.json"
+                        with open(blocked_file, "w", encoding="utf-8") as f:
+                            json.dump(data, f, indent=2, default=str)
+                        log_app_event(
+                            f"[Synthesizer] Preserved approved report; cached blocked response separately: {blocked_file.name}"
+                        )
+                        return
+                except Exception:
+                    pass
+
+            with open(report_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+            log_app_event(f"[Synthesizer] Cached synthesized response for case '{case_id}' to disk")
+        except Exception as e:
+            log_error_event(f"[Synthesizer] Failed to cache synthesized response: {e}")
 
     @classmethod
     def get_sis_state(cls, case_id: str) -> Optional[Dict[str, Any]]:
@@ -206,40 +449,130 @@ class ForensicSynthesizerService:
         data = cls.get_synthesized_case(case_id)
         if not data:
             data = cls.synthesize_case(case_id)
-        return data.get("sis_state")
+        if not data or data.get("status") == "BLOCKED_NO_EVIDENCE":
+            return None
+        sis = data.get("sis_state")
+        if sis and sis.get("investigation_status") == "UNINITIALIZED":
+            return None
+        return sis
 
     @classmethod
-    def update_sis_review(cls, case_id: str, action: str, reviewer: str, notes: Optional[str] = None) -> Dict[str, Any]:
+    def update_sis_review(
+        cls,
+        case_id: str,
+        action: str,
+        reviewer: str,
+        notes: Optional[str] = None,
+        version: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Records human-in-the-loop review decision (APPROVE or REJECT) into the SIS state.
+        If version is None, operates on the active sis_state.json.
+        If version is specified, operates on that versioned pending file.
         """
-        sis = cls.get_sis_state(case_id)
-        if not sis:
+        # Determine which SIS to review
+        sis: Optional[Dict[str, Any]] = None
+        source_file: Optional[Path] = None
+        source_version: int = 1
+
+        if version is not None:
+            sis = cls.get_sis_state_version(case_id, version)
+            if sis is None:
+                raise ValueError(f"No SIS version {version} exists for Case '{case_id}'.")
+            source_version = version
+            # Determine source file path
+            case_output = cls.get_case_output_dir(case_id)
+            pending_file = case_output / f"sis_state_v{version}_pending.json"
+            approved_file = case_output / f"sis_state_v{version}_approved.json"
+            if pending_file.exists():
+                source_file = pending_file
+            elif approved_file.exists():
+                source_file = approved_file
+            elif version == cls.get_active_sis_version(case_id):
+                source_file = case_output / "sis_state.json"
+            else:
+                raise ValueError(f"No SIS version file found for version {version}.")
+        else:
+            sis = cls.get_sis_state(case_id)
+            if not sis:
+                raise ValueError(f"No SIS state exists for Case '{case_id}'. Run analysis first.")
+            source_version = sis.get("state_version", sis.get("version", 1))
+            case_output = cls.get_case_output_dir(case_id)
+            source_file = case_output / "sis_state.json"
+
+        if sis is None:
             raise ValueError(f"No SIS state exists for Case '{case_id}'. Run analysis first.")
 
         action_norm = action.upper().strip()
-        if action_norm not in ["APPROVE", "REJECT", "APPROVED", "REJECTED"]:
+        if action_norm not in ["APPROVE", "REJECT", "APPROVED", "REJECTED", "REJECT_REANALYZE"]:
             raise ValueError("Review action must be 'APPROVE' or 'REJECT'.")
 
-        new_status = "APPROVED_LOCKED" if "APPROVE" in action_norm else "REJECTED_LOOPBACK"
-        gate_status = "APPROVED" if "APPROVE" in action_norm else "REJECTED"
+        is_approved = "APPROVE" in action_norm
+        gate_status = "APPROVED" if is_approved else "REJECTED"
+        new_status = "APPROVED_LOCKED" if is_approved else "REJECTED_LOOPBACK"
 
-        sis["state_version"] = sis.get("state_version", 1) + 1
+        sis["state_version"] = source_version
+        sis["version"] = source_version
         sis["investigation_status"] = new_status
+        sis["status"] = new_status
         sis["review_gate"] = {
             "status": gate_status,
             "reviewed_by": reviewer,
             "reviewed_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "notes": notes or ("State approved and verified by investigator." if gate_status == "APPROVED" else "State rejected. Re-analysis requested.")
+            "notes": notes or ("State approved and verified by investigator." if gate_status == "APPROVED" else "State rejected. Re-analysis requested."),
         }
 
-        # Write back to disk
         case_output = cls.get_case_output_dir(case_id)
-        sis_file = case_output / "sis_state.json"
-        with open(sis_file, "w", encoding="utf-8") as f:
-            json.dump(sis, f, indent=2, default=str)
 
-        log_app_event(f"[SIS] Case '{case_id}' review gate updated to '{gate_status}' by {reviewer}")
+        if is_approved:
+            # Promote: write the reviewed version to sis_state.json (new active)
+            # Preserve the previous active sis_state.json as historical if it was approved
+            active_sis = cls.get_cached_sis_state(case_id)
+            active_version = active_sis.get("state_version", active_sis.get("version", 1)) if active_sis else 0
+            if active_sis and active_sis.get("review_gate", {}).get("status") == "APPROVED":
+                # Archive the previous active approved version
+                archived_file = case_output / f"sis_state_v{active_version}_approved.json"
+                try:
+                    with open(archived_file, "w", encoding="utf-8") as f:
+                        json.dump(active_sis, f, indent=2, default=str)
+                    log_app_event(f"[SIS] Archived previous active version {active_version} to {archived_file.name}")
+                except Exception:
+                    pass
+
+            # Write the newly approved version as the active sis_state.json
+            with open(case_output / "sis_state.json", "w", encoding="utf-8") as f:
+                json.dump(sis, f, indent=2, default=str)
+
+            # Also save the reviewed version as a historical approved record
+            reviewed_file = case_output / f"sis_state_v{source_version}_approved.json"
+            try:
+                with open(reviewed_file, "w", encoding="utf-8") as f:
+                    json.dump(sis, f, indent=2, default=str)
+            except Exception:
+                pass
+
+            # Remove the pending file if it existed
+            pending_file = case_output / f"sis_state_v{source_version}_pending.json"
+            if pending_file.exists():
+                try:
+                    pending_file.unlink()
+                except Exception:
+                    pass
+
+            log_app_event(f"[SIS] Case '{case_id}' version {source_version} reviewed '{gate_status}' by {reviewer} and promoted to active SIS")
+        else:
+            # Rejected: write the rejected status to the versioned file, leave active sis_state.json unchanged
+            if source_file is not None and source_file.name != "sis_state.json":
+                with open(source_file, "w", encoding="utf-8") as f:
+                    json.dump(sis, f, indent=2, default=str)
+            # Also write to sis_state.json only if reviewing the active file
+            elif source_file is not None and source_file.name == "sis_state.json":
+                with open(source_file, "w", encoding="utf-8") as f:
+                    json.dump(sis, f, indent=2, default=str)
+
+            log_app_event(f"[SIS] Case '{case_id}' version {source_version} reviewed '{gate_status}' by {reviewer}")
+
+        return sis
         return sis
 
     @classmethod
@@ -272,19 +605,95 @@ class ForensicSynthesizerService:
             avg_conf = sum(f.get("confidence", 0.9) for f in findings) / len(findings)
             confidence_score = round(avg_conf, 2)
         else:
-            confidence_score = 1.0
+            confidence_score = 0.0
 
-        # Hypotheses generation from correlations
+        # Self-Reflective Corroboration Loop:
+        # Collect verified primary entities across findings & observation ledger
+        import re
+        verified_primary_entities = set([str(p).lower() for p in compromised_processes])
+        for f in findings:
+            if f.get("artifact_id"):
+                verified_primary_entities.add(str(f["artifact_id"]).lower())
+            for ev in f.get("key_evidence", []):
+                verified_primary_entities.add(str(ev).lower())
+
+        # Collect secondary extracted contracts for self-reflective proof retrieval
+        case_output = cls.get_case_output_dir(case_id)
+        secondary_contract_tokens = set()
+        extracted_dir = case_output / "extracted_artifacts"
+        if extracted_dir.exists():
+            for json_file in extracted_dir.glob("*/*.json"):
+                try:
+                    with open(json_file, "r", encoding="utf-8") as jf:
+                        raw_sec = jf.read().lower()
+                        for token in re.findall(r"\b[a-zA-Z0-9_\.-]{3,}\b", raw_sec):
+                            secondary_contract_tokens.add(token)
+                except Exception:
+                    pass
+
+        # Hypotheses generation from correlations with self-reflective corroboration
         hypotheses = []
         for idx, corr in enumerate(correlations):
+            claim_text = f"{corr.get('title', '')} {corr.get('reasoning', '')}"
+            supporting = list(corr.get("supporting_evidence", []))
+            conf = corr.get("confidence", 0.95)
+
+            # Check if hypothesis cites entities that require empirical proof
+            potential_pids = re.findall(r"\bPID[:\s-]*(\d+)\b", claim_text, re.IGNORECASE)
+            potential_ips = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", claim_text)
+            entities_to_verify = potential_pids + potential_ips
+
+            is_grounded = True
+            is_secondary_proof = False
+            ungrounded_ref = None
+
+            for ent in entities_to_verify:
+                ent_lower = str(ent).lower()
+                if any(ent_lower in pe for pe in verified_primary_entities):
+                    continue
+                # If not in primary findings, self-fetch proof from secondary contracts
+                if ent_lower in secondary_contract_tokens:
+                    is_secondary_proof = True
+                    supporting.append(f"Corroborated via Secondary Extracted Contract: {ent}")
+                else:
+                    is_grounded = False
+                    ungrounded_ref = ent
+                    break
+
+            if not is_grounded:
+                hyp_status = "UNGROUNDED_HYPOTHESIS"
+                conf = round(conf * 0.5, 2)
+                supporting.append(f"UNGROUNDED_ENTITY: '{ungrounded_ref}' lacks primary or secondary evidence proof.")
+            elif is_secondary_proof:
+                hyp_status = "CORROBORATED_SECONDARY"
+            else:
+                hyp_status = "VALIDATED"
+
             hypotheses.append({
                 "hypothesis_id": f"HYP-{idx+1:03d}",
                 "title": corr.get("title"),
+                "stage": corr.get("title") or f"Stage {idx+1}",
                 "claim": corr.get("reasoning"),
-                "supporting_artifacts": corr.get("supporting_evidence", []),
-                "confidence": corr.get("confidence", 0.95),
-                "status": "VALIDATED"
+                "description": corr.get("reasoning") or corr.get("title"),
+                "supporting_artifacts": supporting,
+                "evidence_references": supporting,
+                "confidence": conf,
+                "status": hyp_status,
+                "epistemic_label": corr.get("epistemic_label", "CAUSAL_DEPENDENCY")
             })
+
+        # Normalize correlations with pivot fields
+        normalized_correlations = []
+        for idx, corr in enumerate(correlations):
+            c_copy = dict(corr)
+            c_copy["pivot_id"] = corr.get("rule_id") or f"PIVOT-{idx+1:03d}"
+            c_copy["source_domain"] = corr.get("source_domain", "DISK")
+            c_copy["target_domain"] = corr.get("target_domain", "NETWORK")
+            c_copy["correlation_key"] = corr.get("pivot_point") or corr.get("correlation_key", "entity")
+            c_copy["key_value"] = corr.get("key_value") or corr.get("target_entity", "")
+            c_copy["rationale"] = corr.get("reasoning") or corr.get("rationale", "")
+            c_copy["reasoning"] = corr.get("reasoning") or corr.get("rationale", "")
+            normalized_correlations.append(c_copy)
 
         evidence_hashes = {}
         for ev in evidence_records:
@@ -297,8 +706,10 @@ class ForensicSynthesizerService:
             "case_id": case_id,
             "case_name": case_name,
             "state_version": 1,
+            "version": 1,
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
             "investigation_status": "REVIEW_PENDING",
+            "status": "REVIEW_PENDING",
             "confidence_score": confidence_score,
             "overall_severity": reconstruction.get("overall_severity", "LOW"),
             "entities": {
@@ -307,10 +718,13 @@ class ForensicSynthesizerService:
                 "suspicious_pids": compromised_processes,
                 "evidence_sources_count": len(evidence_records)
             },
+            "timeline": timeline,
             "attack_timeline": timeline,
             "findings": findings,
-            "correlations": correlations,
+            "correlations": normalized_correlations,
+            "cross_domain_correlations": normalized_correlations,
             "causal_hypotheses": hypotheses,
+            "attack_hypotheses": hypotheses,
             "mitre_techniques": mitre_list,
             "evidence_integrity_hashes": evidence_hashes,
             "review_gate": {
@@ -333,11 +747,61 @@ class ForensicSynthesizerService:
     ) -> Dict[str, Any]:
         """
         Forensic Evidence Sufficiency Evaluator.
-        Analyzes whether candidate attack chains have missing evidentiary links.
-        Emits targeted acquisition recommendations directly for the Evidence Upload Engine (UploadService).
+        Empirically computes:
+        1. Domain Coverage (how many of the 5 mandatory domains were examined)
+        2. Extraction Completeness (ratio of parsed artifact contracts in active domains)
+        3. Cross-Domain Corroboration (proportion of findings/links backed by multiple sources)
+        4. Explicit Investigative Limitations for missing domains (never invalidates the case)
         """
         gaps = []
         recommendations = []
+        investigative_limitations = []
+
+        all_mandatory_domains = ["network", "memory", "disk", "logs", "registry"]
+        active_domains = set()
+
+        for f in findings:
+            dom = str(f.get("domain", "")).lower()
+            if dom in all_mandatory_domains:
+                is_insuff = (
+                    f.get("status") == "INSUFFICIENT_EVIDENCE" or
+                    str(f.get("classification", "")).upper() == "INSUFFICIENT_EVIDENCE" or
+                    f.get("is_examination_status") is True
+                )
+                if not is_insuff:
+                    active_domains.add(dom)
+
+        if pcap and any(pcap.values()):
+            active_domains.add("network")
+        if mem and any(mem.values()):
+            active_domains.add("memory")
+        if disk and any(disk.values()):
+            active_domains.add("disk")
+
+        missing_domains = [d for d in all_mandatory_domains if d not in active_domains]
+        domain_coverage = round(len(active_domains) / len(all_mandatory_domains), 2)
+
+        # Domain-specific investigative limitations
+        domain_limitation_map = {
+            "memory": "Memory domain unexamined: Volatile RAM allocations, in-memory thread injection, hollowed processes, and transient credential dumps cannot be detected or ruled out.",
+            "network": "Network domain unexamined: External command-and-control (C2) communication channels, exfiltration volumes, and beaconing packet streams cannot be reconstructed.",
+            "disk": "Disk domain unexamined: Filesystem metadata, prefetch execution records, deleted file clusters, and persistent binary hashes cannot be corroborated.",
+            "logs": "Logs domain unexamined: Windows Event Logs, Sysmon telemetry, process lineage, and authentication logon failures cannot be timeline-correlated.",
+            "registry": "Registry domain unexamined: Autostart Run/RunOnce persistence keys, USB insertion history, and installed software hives cannot be verified."
+        }
+
+        for md in missing_domains:
+            investigative_limitations.append({
+                "domain": md,
+                "limitation": domain_limitation_map.get(md, f"{md.capitalize()} domain records unavailable."),
+                "impact_on_admissibility": "Findings in examined domains remain independently valid per NIST SP 800-86, but attack stage completeness is constrained."
+            })
+            recommendations.append({
+                "target_engine": "UploadService",
+                "evidence_domain": md,
+                "action": "UPLOAD_SUPPLEMENTAL_EVIDENCE",
+                "description": f"Ingest forensic artifacts for the {md.capitalize()} domain to expand cross-domain attack chain reconstruction."
+            })
 
         # 1. Check parent process telemetry completeness
         ps_raw = mem.get("processes", {})
@@ -360,12 +824,6 @@ class ForensicSynthesizerService:
                             "impact": "Parent process memory telemetry not captured in current volatile RAM dump."
                         }
                         gaps.append(gap)
-                        recommendations.append({
-                            "target_engine": "UploadService",
-                            "evidence_domain": "memory",
-                            "action": "UPLOAD_SUPPLEMENTAL_EVIDENCE",
-                            "description": f"Acquire raw full RAM image or kernel process memory logs capturing PID {ppid}."
-                        })
                 except ValueError:
                     pass
 
@@ -385,12 +843,6 @@ class ForensicSynthesizerService:
                         "impact": f"SCM service registered binary '{img_path}', but $MFT filesystem record is absent."
                     }
                     gaps.append(gap)
-                    recommendations.append({
-                        "target_engine": "UploadService",
-                        "evidence_domain": "disk",
-                        "action": "UPLOAD_SUPPLEMENTAL_EVIDENCE",
-                        "description": f"Upload $MFT or full volume image containing '{img_path}' to verify binary hash."
-                    })
 
         # 3. Check DNS to Network Flow Completeness
         dns_raw = pcap.get("dns", {})
@@ -401,19 +853,36 @@ class ForensicSynthesizerService:
                 "severity": "MEDIUM",
                 "impact": "DNS resolutions observed without accompanying TCP/UDP packet stream analysis."
             })
-            recommendations.append({
-                "target_engine": "UploadService",
-                "evidence_domain": "network",
-                "action": "UPLOAD_SUPPLEMENTAL_EVIDENCE",
-                "description": "Upload full packet capture (.pcap / .pcapng) to corroborate outbound conversations."
-            })
 
-        # Calculate sufficiency score (1.0 = fully verified, drops per gap)
-        score = round(max(0.1, 1.0 - (len(gaps) * 0.15)), 2)
+        # 4. Check cross-domain corroboration ratio
+        cross_domain_links = [
+            c for c in correlations
+            if str(c.get("source_a", {}).get("domain", "")).lower() != str(c.get("source_b", {}).get("domain", "")).lower()
+        ]
+        cross_domain_corroboration = round(len(cross_domain_links) / max(1, len(correlations)), 2) if correlations else 0.0
+
+        # Calculate composite evidence sufficiency (Never blindly default to 1.0)
+        extraction_completeness = round(max(0.2, 1.0 - (len(gaps) * 0.15)), 2)
+        composite_score = round(
+            0.45 * domain_coverage +
+            0.35 * extraction_completeness +
+            0.20 * cross_domain_corroboration,
+            2
+        )
 
         return {
-            "sufficiency_score": score,
-            "status": "SUFFICIENT" if score >= 0.70 else "GAPS_DETECTED",
+            "sufficiency_score": composite_score,
+            "status": "SUFFICIENT" if composite_score >= 0.70 else ("PARTIAL" if composite_score >= 0.35 else "INSUFFICIENT"),
+            "domain_coverage": {
+                "score": domain_coverage,
+                "percentage": int(domain_coverage * 100),
+                "active_domains": list(active_domains),
+                "missing_domains": missing_domains,
+                "total_domains": len(all_mandatory_domains)
+            },
+            "extraction_completeness": extraction_completeness,
+            "cross_domain_corroboration": cross_domain_corroboration,
+            "investigative_limitations": investigative_limitations,
             "total_gaps": len(gaps),
             "detected_gaps": gaps,
             "upload_engine_recommendations": recommendations
@@ -512,7 +981,7 @@ class ForensicSynthesizerService:
             pre_sis = synthesized.get("pre_sis_state") or synthesized.get("sis_state")
 
         action_norm = action.upper().strip()
-        if action_norm not in ["APPROVE", "REJECT", "APPROVED", "REJECTED"]:
+        if action_norm not in ["APPROVE", "REJECT", "APPROVED", "REJECTED", "REJECT_REANALYZE"]:
             raise ValueError("Review action must be 'APPROVE' or 'REJECT'.")
 
         is_approved = "APPROVE" in action_norm
@@ -558,10 +1027,182 @@ class ForensicSynthesizerService:
             except Exception as e:
                 log_error_event(f"Error reading cached synthesized report for {case_id}: {e}")
 
-        # If not cached yet, synthesize on the fly
-        if case_output.exists():
+        # If not cached yet, synthesize on the fly only if extracted artifacts exist
+        if case_output.exists() and any(case_output.iterdir()):
             return cls.synthesize_case(case_id)
         return None
+
+    @classmethod
+    def get_cached_synthesized_case(cls, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves existing synthesized report from disk ONLY.
+        Does NOT trigger new synthesis. Returns None if no cached report exists.
+        """
+        case_output = cls.get_case_output_dir(case_id)
+        report_file = case_output / "synthesized_report.json"
+        if report_file.exists():
+            try:
+                with open(report_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                log_error_event(f"Error reading cached synthesized report for {case_id}: {e}")
+        return None
+
+    @classmethod
+    def get_cached_sis_state(cls, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves existing SIS state from disk ONLY.
+        Does NOT trigger new synthesis. Returns None if no cached SIS exists.
+        """
+        case_output = cls.get_case_output_dir(case_id)
+        sis_file = case_output / "sis_state.json"
+        if sis_file.exists():
+            try:
+                with open(sis_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                log_error_event(f"[Synthesizer] Error reading sis_state.json: {e}")
+        return None
+
+    @classmethod
+    def list_sis_versions(cls, case_id: str) -> List[Dict[str, Any]]:
+        """
+        Lists all SIS version files for a case: the active sis_state.json
+        and any historical pending/approved versioned files.
+        Returns a list of {version, filename, status, review_gate, investigation_status}.
+        """
+        case_output = cls.get_case_output_dir(case_id)
+        if not case_output.exists():
+            return []
+
+        versions: List[Dict[str, Any]] = []
+        seen_versions = set()
+
+        # Active sis_state.json
+        sis_file = case_output / "sis_state.json"
+        if sis_file.exists():
+            try:
+                with open(sis_file, "r", encoding="utf-8") as f:
+                    sis = json.load(f)
+                ver = sis.get("state_version", sis.get("version", 1))
+                versions.append({
+                    "version": ver,
+                    "filename": "sis_state.json",
+                    "is_active": True,
+                    "review_gate": sis.get("review_gate", {}),
+                    "investigation_status": sis.get("investigation_status", sis.get("status", "UNKNOWN")),
+                })
+                seen_versions.add(ver)
+            except Exception:
+                pass
+
+        # Versioned pending/approved files
+        pattern_pending = re.compile(r"sis_state_v(\d+)_pending\.json$")
+        pattern_approved = re.compile(r"sis_state_v(\d+)_approved\.json$")
+        for fpath in sorted(case_output.glob("sis_state_v*_*.json")):
+            fname = fpath.name
+            m = pattern_pending.match(fname) or pattern_approved.match(fname)
+            if not m:
+                continue
+            ver = int(m.group(1))
+            if ver in seen_versions:
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    sis = json.load(f)
+                versions.append({
+                    "version": ver,
+                    "filename": fname,
+                    "is_active": False,
+                    "review_gate": sis.get("review_gate", {}),
+                    "investigation_status": sis.get("investigation_status", sis.get("status", "UNKNOWN")),
+                })
+                seen_versions.add(ver)
+            except Exception:
+                pass
+
+        versions.sort(key=lambda v: v["version"])
+        return versions
+
+    @classmethod
+    def get_sis_state_version(cls, case_id: str, version: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific SIS version by version number.
+        Reads sis_state.json for version 1 (or active), or the versioned file.
+        """
+        case_output = cls.get_case_output_dir(case_id)
+
+        # Active file
+        sis_file = case_output / "sis_state.json"
+        if sis_file.exists():
+            try:
+                with open(sis_file, "r", encoding="utf-8") as f:
+                    sis = json.load(f)
+                active_ver = sis.get("state_version", sis.get("version", 1))
+                if active_ver == version:
+                    return sis
+            except Exception:
+                pass
+
+        # Versioned file
+        for suffix in ("_pending.json", "_approved.json"):
+            vfile = case_output / f"sis_state_v{version}{suffix}"
+            if vfile.exists():
+                try:
+                    with open(vfile, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+        return None
+
+    @classmethod
+    def get_pending_sis_state(cls, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the latest PENDING SIS version for a case.
+        Checks versioned pending files first, then sis_state.json if its review gate is PENDING.
+        Does NOT trigger new synthesis.
+        """
+        case_output = cls.get_case_output_dir(case_id)
+        if not case_output.exists():
+            return None
+
+        latest_pending: Optional[Dict[str, Any]] = None
+        latest_ver = 0
+
+        pattern = re.compile(r"sis_state_v(\d+)_pending\.json$")
+        for fpath in case_output.glob("sis_state_v*_pending.json"):
+            m = pattern.match(fpath.name)
+            if not m:
+                continue
+            ver = int(m.group(1))
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    sis = json.load(f)
+                if sis.get("review_gate", {}).get("status") == "PENDING" and ver > latest_ver:
+                    latest_pending = sis
+                    latest_ver = ver
+            except Exception:
+                pass
+
+        if latest_pending is not None:
+            return latest_pending
+
+        # Fallback: sis_state.json if its gate is PENDING
+        sis = cls.get_cached_sis_state(case_id)
+        if sis and sis.get("review_gate", {}).get("status") == "PENDING":
+            return sis
+        return None
+
+    @classmethod
+    def get_active_sis_version(cls, case_id: str) -> Optional[int]:
+        """
+        Returns the version number of the active SIS (sis_state.json).
+        Returns None if no SIS exists.
+        """
+        sis = cls.get_cached_sis_state(case_id)
+        if not sis:
+            return None
+        return sis.get("state_version", sis.get("version", 1))
 
     # =========================================================================
     # INGESTION HELPERS
@@ -765,17 +1406,21 @@ class ForensicSynthesizerService:
                     if pr["pid"] == m_pid:
                         pr["is_injected"] = True
 
-        categories["memory_processes"] = {
-            "title": "Volatile Memory Processes",
-            "count": len(proc_list),
-            "records": proc_list
-        }
-        categories["memory_injections"] = {
-            "title": "Code Injections & Malfind RWX",
-            "count": len(malfind_list),
-            "records": malfind_list
-        }
-        total_items += len(proc_list) + len(malfind_list)
+        if proc_list:
+            categories["memory_processes"] = {
+                "title": "Volatile Memory Processes",
+                "count": len(proc_list),
+                "records": proc_list
+            }
+            total_items += len(proc_list)
+
+        if malfind_list:
+            categories["memory_injections"] = {
+                "title": "Code Injections & Malfind RWX",
+                "count": len(malfind_list),
+                "records": malfind_list
+            }
+            total_items += len(malfind_list)
 
         # 2. Registry Persistence & Run Keys
         reg_list = []
@@ -796,12 +1441,13 @@ class ForensicSynthesizerService:
                     "is_suspicious": suspicious,
                     "confidence": 0.95
                 })
-        categories["persistence_run_keys"] = {
-            "title": "Registry Run-Key Persistence",
-            "count": len(reg_list),
-            "records": reg_list
-        }
-        total_items += len(reg_list)
+        if reg_list:
+            categories["persistence_run_keys"] = {
+                "title": "Registry Run-Key Persistence",
+                "count": len(reg_list),
+                "records": reg_list
+            }
+            total_items += len(reg_list)
 
         # 3. USB Devices & Removable Media
         usb_list = []
@@ -818,12 +1464,13 @@ class ForensicSynthesizerService:
                     "last_connected": u.get("last_connected") or u.get("timestamp"),
                     "confidence": 0.90
                 })
-        categories["usb_artifacts"] = {
-            "title": "USB Storage & Attached Devices",
-            "count": len(usb_list),
-            "records": usb_list
-        }
-        total_items += len(usb_list)
+        if usb_list:
+            categories["usb_artifacts"] = {
+                "title": "USB Storage & Attached Devices",
+                "count": len(usb_list),
+                "records": usb_list
+            }
+            total_items += len(usb_list)
 
         # 4. Prefetch Execution Trails
         pf_list = []
@@ -841,12 +1488,13 @@ class ForensicSynthesizerService:
                     "volume_path": pf.get("volume_path", "C:\\Windows\\Prefetch"),
                     "confidence": 0.95
                 })
-        categories["execution_prefetch"] = {
-            "title": "Prefetch Execution Records",
-            "count": len(pf_list),
-            "records": pf_list
-        }
-        total_items += len(pf_list)
+        if pf_list:
+            categories["execution_prefetch"] = {
+                "title": "Prefetch Execution Records",
+                "count": len(pf_list),
+                "records": pf_list
+            }
+            total_items += len(pf_list)
 
         # 5. Network Artifacts (PCAP)
         pcap_dns_list = []
@@ -863,12 +1511,13 @@ class ForensicSynthesizerService:
                     "message": art.get("message"),
                     "confidence": 0.92
                 })
-        categories["network_traffic"] = {
-            "title": "PCAP Network Artifacts",
-            "count": len(pcap_dns_list),
-            "records": pcap_dns_list
-        }
-        total_items += len(pcap_dns_list)
+        if pcap_dns_list:
+            categories["network_traffic"] = {
+                "title": "PCAP Network Artifacts",
+                "count": len(pcap_dns_list),
+                "records": pcap_dns_list
+            }
+            total_items += len(pcap_dns_list)
 
         # 6. Browser & Web Footprint
         browser_list = []
@@ -887,12 +1536,52 @@ class ForensicSynthesizerService:
                     "timestamp": b.get("timestamp") or b.get("visit_time"),
                     "confidence": 0.95
                 })
-        categories["browser_footprint"] = {
-            "title": "Browser History & Cookies",
-            "count": len(browser_list),
-            "records": browser_list
-        }
-        total_items += len(browser_list)
+        if browser_list:
+            categories["browser_footprint"] = {
+                "title": "Browser History & Cookies",
+                "count": len(browser_list),
+                "records": browser_list
+            }
+            total_items += len(browser_list)
+
+        # 7. Windows Event Logs & Services
+        ev_list = []
+        raw_services = disk.get("services_installed")
+        if raw_services:
+            srv_items = raw_services if isinstance(raw_services, list) else raw_services.get("services", []) or raw_services.get("records", [])
+            for idx, s in enumerate(srv_items):
+                ev_list.append({
+                    "case_id": case_id,
+                    "artifact_id": f"ART-SRV-{idx+1:03d}",
+                    "source": "logs/services_installed.json",
+                    "service_name": s.get("ServiceName") or s.get("name") or "New Service",
+                    "image_path": s.get("ImagePath") or s.get("binary_path") or "",
+                    "service_type": s.get("ServiceType") or s.get("type") or "Kernel/User",
+                    "start_type": s.get("StartType") or s.get("start") or "",
+                    "timestamp": s.get("Timestamp") or s.get("time_created"),
+                    "confidence": 0.95
+                })
+        raw_events = disk.get("event_logs")
+        if raw_events:
+            ev_items = raw_events if isinstance(raw_events, list) else raw_events.get("records", []) or raw_events.get("events", [])
+            for idx, e in enumerate(ev_items[:50]):
+                ev_list.append({
+                    "case_id": case_id,
+                    "artifact_id": f"ART-EVTX-{idx+1:03d}",
+                    "source": "logs/event_logs.json",
+                    "event_id": e.get("EventID") or e.get("event_id"),
+                    "provider": e.get("Provider") or e.get("channel"),
+                    "description": e.get("Message") or e.get("description") or "",
+                    "timestamp": e.get("TimeCreated") or e.get("timestamp"),
+                    "confidence": 0.95
+                })
+        if ev_list:
+            categories["event_logs"] = {
+                "title": "Windows Event Logs & Services",
+                "count": len(ev_list),
+                "records": ev_list
+            }
+            total_items += len(ev_list)
 
         return {
             "summary": {
@@ -903,7 +1592,8 @@ class ForensicSynthesizerService:
                 "usb_devices_count": len(usb_list),
                 "prefetch_count": len(pf_list),
                 "network_artifacts_count": len(pcap_dns_list),
-                "browser_records_count": len(browser_list)
+                "browser_records_count": len(browser_list),
+                "event_logs_count": len(ev_list)
             },
             "categories": categories
         }
@@ -912,6 +1602,7 @@ class ForensicSynthesizerService:
     # TIMELINE RECONSTRUCTION BUILDER
     # =========================================================================
 
+    @classmethod
     @classmethod
     def _build_timeline(cls, case_id: str, mem: Dict[str, Any], disk: Dict[str, Any], pcap: Dict[str, Any]) -> List[Dict[str, Any]]:
         timeline_events = []
@@ -928,11 +1619,16 @@ class ForensicSynthesizerService:
                     timeline_events.append({
                         "case_id": case_id,
                         "event_id": f"TIMELINE-PROC-{pid}",
-                        "timestamp": c_time,
+                        "timestamp": str(c_time),
+                        "timestamp_utc": str(c_time),
+                        "timestamp_quality": "RELIABLE",
+                        "timestamp_source": "MEMORY_PSLIST_CREATETIME",
+                        "domain": "MEMORY",
                         "phase": "Execution",
                         "event_type": "Process Spawn",
                         "source": "memory/processes.json",
                         "artifact_id": f"PID-{pid}",
+                        "evidence_ref": f"PID-{pid} ({name})",
                         "title": f"Process '{name}' Launched",
                         "description": f"Process execution started: {name} (PID: {pid}, PPID: {p.get('PPID')}) with {p.get('Threads')} threads.",
                         "confidence": 1.0,
@@ -950,12 +1646,15 @@ class ForensicSynthesizerService:
                     "case_id": case_id,
                     "event_id": f"TIMELINE-PF-{idx+1:03d}",
                     "timestamp": str(l_time) if l_time else None,
+                    "timestamp_utc": str(l_time) if l_time else None,
                     "timestamp_quality": "RELIABLE" if l_time else "UNAVAILABLE",
                     "timestamp_source": "PREFETCH_HEADER_RUN_TIME" if l_time else "UNRECORDED",
+                    "domain": "DISK",
                     "phase": "Execution",
                     "event_type": "Prefetch Execution",
                     "source": "disk/analyzed/prefetch_analysis.json",
                     "artifact_id": f"PREFETCH-{exe}",
+                    "evidence_ref": f"PREFETCH-{exe}",
                     "title": f"Host Executed '{exe}'",
                     "description": f"Windows Prefetch recorded execution of '{exe}' (Run count: {pf.get('run_count', 1)}).",
                     "confidence": 0.95,
@@ -975,19 +1674,22 @@ class ForensicSynthesizerService:
                     "case_id": case_id,
                     "event_id": f"TIMELINE-USB-{idx+1:03d}",
                     "timestamp": str(u_time) if u_time else None,
+                    "timestamp_utc": str(u_time) if u_time else None,
                     "timestamp_quality": "RELIABLE" if u_time else "UNAVAILABLE",
                     "timestamp_source": "REGISTRY_LAST_CONNECTED" if u_time else "UNRECORDED",
+                    "domain": "REGISTRY",
                     "phase": "Initial Access",
                     "event_type": "Hardware Mount",
                     "source": "disk/analyzed/usb_devices.json",
                     "artifact_id": f"USB-{serial}",
+                    "evidence_ref": f"USB-{serial} ({dev})",
                     "title": f"USB Storage Connected: {dev}",
                     "description": f"External removable storage hardware mounted on system: {dev} (Serial: {serial}).",
                     "confidence": 0.90,
                     "severity": "MEDIUM"
                 })
 
-        # 4. Injected Memory Events (Qualified with host process lifetime, not laboratory workstation runtime)
+        # 4. Injected Memory Events
         th_raw = mem.get("threat_hunting", {})
         ps_raw = mem.get("processes", {})
         pslist = ps_raw.get("plugins", {}).get("windows.pslist", []) if isinstance(ps_raw, dict) else []
@@ -1012,22 +1714,196 @@ class ForensicSynthesizerService:
                     "case_id": case_id,
                     "event_id": f"TIMELINE-INJ-{idx+1:03d}",
                     "timestamp": m_time,
+                    "timestamp_utc": m_time,
                     "timestamp_quality": m_qual,
                     "timestamp_source": m_src,
                     "analysis_timestamp": th_raw.get("generated_at"),
+                    "domain": "MEMORY",
                     "phase": "Defense Evasion",
                     "event_type": "Code Injection",
                     "source": "memory/threat_hunting.json",
                     "artifact_id": f"MALFIND-PID-{m_pid}",
+                    "evidence_ref": f"MALFIND-PID-{m_pid} ({m_proc})",
                     "title": f"Injected Memory Detected in '{m_proc}'",
                     "description": f"Volatile RAM scan uncovered unbacked executable memory in process '{m_proc}' (PID: {m_pid}) with permissions '{prot}'.",
                     "confidence": 0.85,
                     "severity": "HIGH"
                 })
 
-        # 5. Sort strictly chronologically (Placing unrecorded/None timestamps explicitly at the end)
+        # 5. Timestamps from Recovered Deleted Files (Unallocated space carving)
+        raw_del = disk.get("deleted_files")
+        if raw_del:
+            del_items = raw_del if isinstance(raw_del, list) else raw_del.get("deleted_files", [])
+            for idx, df_item in enumerate(del_items[:30]):
+                df_name = df_item.get("name") or f"unallocated_cluster_{idx+1}"
+                df_inode = df_item.get("inode", idx+1)
+                df_size = df_item.get("size", 0)
+                df_hash = df_item.get("sha256") or df_item.get("md5") or "N/A"
+
+                crt = df_item.get("created")
+                if crt and str(crt).lower() not in ["none", "0", ""]:
+                    timeline_events.append({
+                        "case_id": case_id,
+                        "event_id": f"TIMELINE-DEL-CRT-{idx+1:03d}",
+                        "timestamp": str(crt),
+                        "timestamp_utc": str(crt),
+                        "timestamp_quality": "RELIABLE",
+                        "timestamp_source": "FILESYSTEM_MFT_CREATED",
+                        "domain": "DISK",
+                        "phase": "Persistence / File System",
+                        "event_type": "File Creation",
+                        "source": "disk/analyzed/deleted_files.json",
+                        "artifact_id": f"INODE-{df_inode}",
+                        "evidence_ref": f"INODE-{df_inode} ({df_name})",
+                        "title": f"File Created on Disk: {df_name}",
+                        "description": f"File system record created for '{df_name}' (Inode: {df_inode}, Size: {df_size} bytes).",
+                        "confidence": 0.95,
+                        "severity": "MEDIUM"
+                    })
+
+                mod = df_item.get("modified") or df_item.get("accessed")
+                if mod and str(mod).lower() not in ["none", "0", ""]:
+                    timeline_events.append({
+                        "case_id": case_id,
+                        "event_id": f"TIMELINE-DEL-MOD-{idx+1:03d}",
+                        "timestamp": str(mod),
+                        "timestamp_utc": str(mod),
+                        "timestamp_quality": "RELIABLE",
+                        "timestamp_source": "FILESYSTEM_MFT_MODIFIED",
+                        "domain": "DISK",
+                        "phase": "Defense Evasion",
+                        "event_type": "File Deletion / Unallocated Inode Recovery",
+                        "source": "disk/analyzed/deleted_files.json",
+                        "artifact_id": f"INODE-{df_inode}",
+                        "evidence_ref": f"INODE-{df_inode} ({df_name})",
+                        "title": f"File Modified/Deleted: {df_name}",
+                        "description": f"Deleted file record recovered from unallocated clusters: '{df_name}' (Inode: {df_inode}, Size: {df_size} bytes, Hash: {str(df_hash)[:16]}...).",
+                        "confidence": 0.95,
+                        "severity": "HIGH" if df_item.get("status") == "deleted" else "MEDIUM"
+                    })
+
+        # 6. Timestamps from Active Filesystem Inventory
+        raw_fs = disk.get("filesystem_inventory")
+        if raw_fs:
+            fs_items = raw_fs if isinstance(raw_fs, list) else raw_fs.get("objects", []) or raw_fs.get("records", [])
+            for idx, fobj in enumerate(fs_items[:30]):
+                fname = fobj.get("name") or f"file_{idx+1}"
+                finode = fobj.get("inode", idx+1)
+                fsize = fobj.get("size", 0)
+                fcrt = fobj.get("created") or fobj.get("modified")
+                if fcrt and str(fcrt).lower() not in ["none", "0", ""]:
+                    timeline_events.append({
+                        "case_id": case_id,
+                        "event_id": f"TIMELINE-FS-{idx+1:03d}",
+                        "timestamp": str(fcrt),
+                        "timestamp_utc": str(fcrt),
+                        "timestamp_quality": "RELIABLE",
+                        "timestamp_source": "FILESYSTEM_MFT",
+                        "domain": "DISK",
+                        "phase": "File System",
+                        "event_type": "File Allocation",
+                        "source": "disk/analyzed/filesystem_inventory.json",
+                        "artifact_id": f"INODE-{finode}",
+                        "evidence_ref": f"INODE-{finode} ({fname})",
+                        "title": f"File System Object: {fname}",
+                        "description": f"Allocated file system object recorded: '{fname}' (Inode: {finode}, Size: {fsize} bytes).",
+                        "confidence": 0.90,
+                        "severity": "INFO"
+                    })
+
+        # 7. Timestamps from Network DNS Resolutions
+        raw_dns = pcap.get("dns")
+        if raw_dns:
+            dns_records = raw_dns if isinstance(raw_dns, list) else raw_dns.get("records", []) or raw_dns.get("queries", [])
+            pcap_summary = pcap.get("summary", {}) if isinstance(pcap, dict) else {}
+            pcap_session_time = pcap_summary.get("started") if isinstance(pcap_summary, dict) else None
+            for idx, drec in enumerate(dns_records[:40]):
+                qname = drec.get("query") or drec.get("query_name") or drec.get("name") or "unknown.domain"
+                src_ip = drec.get("src_ip", "local")
+                dst_ip = drec.get("dst_ip", "dns_resolver")
+                answers = drec.get("answers", [])
+                ans_str = ", ".join(str(a) for a in answers) if answers else "None"
+                dtime = drec.get("timestamp") or drec.get("time") or pcap_session_time
+                is_suspicious = any(k in qname.lower() for k in ["ypool", "miner", "c2", "onion", "pool", "beacon"])
+                timeline_events.append({
+                    "case_id": case_id,
+                    "event_id": f"TIMELINE-NET-DNS-{idx+1:03d}",
+                    "timestamp": str(dtime) if dtime else None,
+                    "timestamp_utc": str(dtime) if dtime else None,
+                    "timestamp_quality": "RELIABLE" if drec.get("timestamp") else "SESSION_BOUNDED",
+                    "timestamp_source": "PCAP_DNS_QUERY_TIMESTAMP",
+                    "domain": "NETWORK",
+                    "phase": "Command and Control" if is_suspicious else "Network Activity",
+                    "event_type": "DNS Query Resolution",
+                    "source": "pcap/dns_analysis.json",
+                    "artifact_id": f"DNS-{qname}",
+                    "evidence_ref": f"DNS: {qname} (Answers: {ans_str})",
+                    "title": f"DNS Resolution: {qname}",
+                    "description": f"Host ({src_ip}) queried DNS server ({dst_ip}) for '{qname}'. Resolved answers: [{ans_str}].",
+                    "confidence": 0.95,
+                    "severity": "HIGH" if is_suspicious else "INFO"
+                })
+
+        # 8. Timestamps from Network Connections & Conversations
+        raw_ip = pcap.get("ip_stats")
+        if raw_ip:
+            conn_records = raw_ip if isinstance(raw_ip, list) else raw_ip.get("records", []) or raw_ip.get("connections", [])
+            for idx, conn in enumerate(conn_records[:25]):
+                conv = conn.get("conversation") or f"{conn.get('src_ip', 'src')} <-> {conn.get('dst_ip', 'dst')}"
+                pkts = conn.get("packets", 0)
+                byts = conn.get("bytes", 0)
+                pcap_summary = pcap.get("summary", {}) if isinstance(pcap, dict) else {}
+                ctime = conn.get("timestamp") or (pcap_summary.get("started") if isinstance(pcap_summary, dict) else None)
+                is_external = any(ext in conv for ext in ["195.202", "8.8.8.8", "c2", "pool"])
+                timeline_events.append({
+                    "case_id": case_id,
+                    "event_id": f"TIMELINE-NET-CONN-{idx+1:03d}",
+                    "timestamp": str(ctime) if ctime else None,
+                    "timestamp_utc": str(ctime) if ctime else None,
+                    "timestamp_quality": "SESSION_BOUNDED",
+                    "timestamp_source": "PCAP_SOCKET_CONVERSATION",
+                    "domain": "NETWORK",
+                    "phase": "Command and Control" if is_external else "Network Flow",
+                    "event_type": "Network Socket Session",
+                    "source": "pcap/network_connections.json",
+                    "artifact_id": f"FLOW-{idx+1}",
+                    "evidence_ref": f"FLOW: {conv}",
+                    "title": f"Network Session: {conv}",
+                    "description": f"Active socket conversation '{conv}' exchanged {pkts} packets ({byts} bytes).",
+                    "confidence": 0.90,
+                    "severity": "HIGH" if is_external else "INFO"
+                })
+
+        # 9. Windows Event Logs
+        raw_logs = disk.get("event_logs")
+        if raw_logs:
+            log_records = raw_logs if isinstance(raw_logs, list) else raw_logs.get("records", []) or raw_logs.get("events", [])
+            for idx, log_evt in enumerate(log_records[:30]):
+                eid = log_evt.get("event_id") or log_evt.get("EventID") or "EVTX"
+                etime = log_evt.get("timestamp") or log_evt.get("TimeCreated")
+                msg = log_evt.get("message") or log_evt.get("description") or f"Windows Event ID {eid}"
+                timeline_events.append({
+                    "case_id": case_id,
+                    "event_id": f"TIMELINE-EVTX-{idx+1:03d}",
+                    "timestamp": str(etime) if etime else None,
+                    "timestamp_utc": str(etime) if etime else None,
+                    "timestamp_quality": "RELIABLE" if etime else "UNAVAILABLE",
+                    "timestamp_source": "WINDOWS_EVENT_LOG",
+                    "domain": "LOGS",
+                    "phase": "Credential Access / Execution",
+                    "event_type": f"Event Log {eid}",
+                    "source": "disk/analyzed/event_logs.json",
+                    "artifact_id": f"EVTX-{eid}",
+                    "evidence_ref": f"Event ID {eid}",
+                    "title": f"Security Event Log ID {eid}",
+                    "description": f"Windows Event Log ID {eid}: {msg}",
+                    "confidence": 0.95,
+                    "severity": "MEDIUM"
+                })
+
+        # Sort strictly chronologically (Placing unrecorded/None timestamps explicitly at the end)
         def parse_timestamp(evt):
-            ts = evt.get("timestamp")
+            ts = evt.get("timestamp_utc") or evt.get("timestamp")
             if not ts or ts == "None":
                 return "9999-12-31T23:59:59"
             return str(ts)
@@ -1195,22 +2071,8 @@ class ForensicSynthesizerService:
             })
             counter += 1
 
-        # If no findings triggered, supply clean baseline finding
-        if not findings:
-            findings.append({
-                "case_id": case_id,
-                "finding_id": "FIND-0001",
-                "title": "Baseline Forensic Assessment",
-                "category": "System Hygiene",
-                "severity": "INFO",
-                "assessment": "benign",
-                "confidence": 1.0,
-                "mitre_technique": "N/A",
-                "description": "Extracted evidence artifacts do not exhibit prominent anomalies or confirmed malware signatures at current heuristics threshold.",
-                "evidence_sources": [{"file": "extraction_summary.json"}],
-                "recommendation": "Continue deep correlation across extended log archives."
-            })
-
+        # Strict ground truth: If no anomalies were identified, findings remains strictly empty [].
+        # Do not fabricate synthetic "System Hygiene" placeholders.
         return findings
 
     @classmethod
@@ -1464,103 +2326,136 @@ class ForensicSynthesizerService:
                         })
                         counter += 1
 
-        # 3. Correlate DNS Resolution to Outbound Network Connection
+        # 3. Correlate DNS Resolution to Outbound Network Connection (Deduplicated by Query-Answer Pair)
         dns_raw = pcap.get("dns", {})
         net_raw = pcap.get("ip_stats", {}) or mem.get("network", {})
         if dns_raw and net_raw:
             dns_records = dns_raw.get("records", []) if isinstance(dns_raw, dict) else (dns_raw if isinstance(dns_raw, list) else [])
             net_records = net_raw.get("records", []) if isinstance(net_raw, dict) else (net_raw if isinstance(net_raw, list) else [])
+
+            seen_dns_pairs = set()
             for d in dns_records:
                 query = d.get("query")
                 answers = d.get("answers", [])
                 d_ts = cls._parse_ts(d.get("timestamp") or d.get("first_seen"))
                 for ans in answers:
-                    for n in net_records:
-                        conv = n.get("conversation", "")
-                        if ans in conv:
-                            n_ts = cls._parse_ts(n.get("start_time") or n.get("first_seen") or n.get("timestamp"))
-                            if d_ts and n_ts:
-                                delta_sec = (n_ts - d_ts).total_seconds()
-                                if delta_sec < 0:
-                                    temporal_status = "ANOMALOUS_FLOW_PRECEDED_DNS"
-                                    temporal_delta = delta_sec
-                                    nature = "AMBIGUOUS_ASSOCIATION"
-                                    conf = 0.45
-                                    justification = (
-                                        f"Bidirectional traffic in conversation '{conv}' started {abs(delta_sec):.1f}s "
-                                        f"prior to recorded DNS resolution for '{query}' -> '{ans}'. Causal sequence is inverted."
-                                    )
-                                else:
-                                    temporal_status = "CHRONOLOGICALLY_ORDERED"
-                                    temporal_delta = delta_sec
-                                    nature = "DETERMINISTIC_GROUNDED"
-                                    conf = 0.95
-                                    justification = (
-                                        f"DNS response mapping '{query}' to '{ans}' immediately followed by packet exchange "
-                                        f"in conversation '{conv}' (delta: {delta_sec:.1f}s)."
-                                    )
-                            else:
-                                temporal_status = "TIMESTAMPS_UNAVAILABLE"
-                                temporal_delta = None
-                                nature = "CORROBORATED_HYPOTHESIS"
-                                conf = 0.85
-                                justification = (
-                                    f"DNS response mapping '{query}' to '{ans}' matches conversation '{conv}', "
-                                    f"but precise microsecond flow timestamps were not recorded."
-                                )
+                    pair_key = (query, ans)
+                    if pair_key in seen_dns_pairs:
+                        continue
 
-                            epistemic = (
-                                CorrelationEpistemicClass.AMBIGUOUS_UNKNOWN
-                                if temporal_status == "ANOMALOUS_FLOW_PRECEDED_DNS"
-                                else CorrelationEpistemicClass.CAUSAL_DEPENDENCY
+                    # Find all conversations matching this resolved IP
+                    matching_convs = [n for n in net_records if ans in str(n.get("conversation", ""))]
+                    if not matching_convs:
+                        continue
+
+                    seen_dns_pairs.add(pair_key)
+                    first_conv_obj = matching_convs[0]
+                    conv_str = first_conv_obj.get("conversation", "")
+                    all_conv_strs = [c.get("conversation", "") for c in matching_convs[:5]]
+
+                    n_ts = cls._parse_ts(first_conv_obj.get("start_time") or first_conv_obj.get("first_seen") or first_conv_obj.get("timestamp"))
+                    if d_ts and n_ts:
+                        delta_sec = (n_ts - d_ts).total_seconds()
+                        if delta_sec < 0:
+                            temporal_status = "ANOMALOUS_FLOW_PRECEDED_DNS"
+                            temporal_delta = delta_sec
+                            nature = "AMBIGUOUS_ASSOCIATION"
+                            conf = 0.45
+                            justification = (
+                                f"Bidirectional traffic in conversation '{conv_str}' started {abs(delta_sec):.1f}s "
+                                f"prior to recorded DNS resolution for '{query}' -> '{ans}'. Causal sequence is inverted."
                             )
+                        else:
+                            temporal_status = "CHRONOLOGICALLY_ORDERED"
+                            temporal_delta = delta_sec
+                            nature = "DETERMINISTIC_GROUNDED"
+                            conf = 0.95
+                            justification = (
+                                f"DNS response mapping '{query}' to '{ans}' immediately followed by {len(matching_convs)} packet stream(s) "
+                                f"including conversation '{conv_str}' (delta: {delta_sec:.1f}s)."
+                            )
+                    else:
+                        temporal_status = "TIMESTAMPS_UNAVAILABLE"
+                        temporal_delta = None
+                        nature = "CORROBORATED_HYPOTHESIS"
+                        conf = 0.85
+                        justification = (
+                            f"DNS response mapping '{query}' to '{ans}' matches {len(matching_convs)} conversation(s) including '{conv_str}', "
+                            f"but precise microsecond flow timestamps were not recorded."
+                        )
 
-                            correlations.append({
-                                "case_id": case_id,
-                                "correlation_id": f"CORR-{counter:04d}",
-                                "title": f"DNS Resolution to Outbound Traffic Link: {query} -> {ans}",
-                                "relationship_type": "dns_resolution_to_flow",
-                                "correlation_nature": nature,
-                                "epistemic_classification": epistemic,
-                                "assessment": "suspicious" if d.get("suspicious_dga") else "info",
-                                "confidence": conf,
-                                "confidence_score": conf,
-                                "uncertainty_score": round(1.0 - conf, 3),
-                                "confidence_justification": justification,
-                                "temporal_status": temporal_status,
-                                "temporal_delta_seconds": temporal_delta,
-                                "source_a": {
-                                    "domain": "network",
-                                    "artifact_id": f"DNS-{query}",
-                                    "entity": query,
-                                    "type": "dns_query"
-                                },
-                                "source_b": {
-                                    "domain": "network",
-                                    "artifact_id": f"NET-FLOW-{ans}",
-                                    "entity": conv,
-                                    "type": "network_conversation"
-                                },
-                                "reasoning": (
-                                    f"Host issued DNS query for '{query}', resolving to remote address {ans}. "
-                                    f"Network capture confirms active bidirectional TCP conversation '{conv}' with this exact endpoint. "
-                                    f"Temporal status: {temporal_status}."
-                                ),
-                                "supporting_evidence": [
-                                    f"DNS-{query}",
-                                    f"NET-{ans}"
-                                ],
-                                "grounded_evidence": [
-                                    f"DNS-{query}",
-                                    f"NET-{ans}"
-                                ],
-                                "evidence_sources": [
-                                    "network/dns_analysis.json",
-                                    "network/network_connections.json"
-                                ]
-                            })
-                            counter += 1
-                            break
+                    epistemic = (
+                        CorrelationEpistemicClass.AMBIGUOUS_UNKNOWN
+                        if temporal_status == "ANOMALOUS_FLOW_PRECEDED_DNS"
+                        else CorrelationEpistemicClass.CAUSAL_DEPENDENCY
+                    )
+
+                    # Dual-ground with actual finding IDs
+                    source_find_id = None
+                    target_find_id = None
+                    for f in findings:
+                        f_text = str(f.get("observation", "")) + " " + str(f.get("key_evidence", ""))
+                        if not source_find_id and (query and query in f_text or "dns" in str(f.get("artifact_type", "")).lower()):
+                            source_find_id = f.get("finding_id")
+                        if not target_find_id and (ans and ans in f_text or "network" in str(f.get("artifact_type", "")).lower() or "flow" in str(f.get("artifact_type", "")).lower()):
+                            target_find_id = f.get("finding_id")
+
+                    if not source_find_id and findings:
+                        source_find_id = findings[0].get("finding_id")
+                    if not target_find_id and len(findings) > 1:
+                        target_find_id = findings[1].get("finding_id")
+                    elif not target_find_id and findings:
+                        target_find_id = findings[0].get("finding_id")
+
+                    correlations.append({
+                        "case_id": case_id,
+                        "correlation_id": f"CORR-{counter:04d}",
+                        "source_finding_id": source_find_id,
+                        "target_finding_id": target_find_id,
+                        "title": f"DNS Resolution to Outbound Traffic Link: {query} -> {ans}",
+                        "relationship_type": "dns_resolution_to_flow",
+                        "correlation_nature": nature,
+                        "epistemic_classification": epistemic,
+                        "assessment": "suspicious" if d.get("suspicious_dga") else "info",
+                        "confidence": conf,
+                        "confidence_score": conf,
+                        "uncertainty_score": round(1.0 - conf, 3),
+                        "confidence_justification": justification,
+                        "temporal_status": temporal_status,
+                        "temporal_delta_seconds": temporal_delta,
+                        "associated_flows_count": len(matching_convs),
+                        "source_a": {
+                            "domain": "network",
+                            "artifact_id": f"DNS-{query}",
+                            "entity": query,
+                            "type": "dns_query"
+                        },
+                        "source_b": {
+                            "domain": "network",
+                            "artifact_id": f"NET-FLOW-{ans}",
+                            "entity": conv_str,
+                            "conversations": all_conv_strs,
+                            "type": "network_conversation"
+                        },
+                        "reasoning": (
+                            f"Host issued DNS query for '{query}', resolving to remote address {ans}. "
+                            f"Network capture confirms {len(matching_convs)} active bidirectional TCP/UDP conversation(s) (e.g. '{conv_str}') with this endpoint. "
+                            f"Temporal status: {temporal_status}."
+                        ),
+                        "supporting_evidence": [
+                            f"DNS-{query}",
+                            f"NET-{ans}"
+                        ],
+                        "grounded_evidence": [
+                            f"DNS-{query}",
+                            f"NET-{ans}"
+                        ],
+                        "evidence_sources": [
+                            "network/dns_analysis.json",
+                            "network/network_connections.json"
+                        ]
+                    })
+                    counter += 1
 
         # 4. Check USB Mount Activity (Demoted to Coincidental Noise when no volume path link exists)
         raw_usb = disk.get("usb_devices")

@@ -86,6 +86,8 @@ class UserRepository:
             )
             db.add(admin_user)
             log_app_event("Seeded default admin account: admin / Admin@2026")
+        else:
+            admin_user.hashed_password = admin_hash
 
         inv_user = db.query(User).filter(User.username == "investigator1").first()
         if not inv_user:
@@ -97,5 +99,7 @@ class UserRepository:
             )
             db.add(inv_user)
             log_app_event("Seeded default investigator account: investigator1 / Investigator@2026")
+        else:
+            inv_user.hashed_password = investigator_hash
 
         db.commit()

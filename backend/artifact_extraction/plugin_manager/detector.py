@@ -69,6 +69,11 @@ class EvidenceDetector:
         if suffix in [".reg"]:
             return "registry"
 
+        if suffix == ".raw":
+            if any(k in name_lower for k in ["mem", "ram", "dmp", "vol", "vmem"]):
+                return "memory"
+            return "disk"
+
         if suffix in cls.EXTENSION_MAP:
             return cls.EXTENSION_MAP[suffix]
 
